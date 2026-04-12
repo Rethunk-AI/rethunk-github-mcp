@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+*.log
+*.tgz
+
+# Editor / local (keep repo tree clean)
+.DS_Store
+Thumbs.db
