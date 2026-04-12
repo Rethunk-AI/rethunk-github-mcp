@@ -1,10 +1,10 @@
 # AGENTS.md — LLM + dev onboarding
 
-IDEs injecting this as context: do not re-link from rules.
+IDEs injecting context: don't re-link from rules.
 
 **Package:** [`@rethunk/github-mcp`](https://github.com/Rethunk-AI/rethunk-github-mcp). MCP **stdio** server. Entry [`src/server.ts`](src/server.ts) → FastMCP + `registerRethunkGitHubTools`. Build output [`dist/server.js`](dist/server.js) (publish ships full `dist/`).
 
-**Canonical docs — do not duplicate:**
+**Canonical docs — don't duplicate:**
 - Install + per-client wiring → [docs/install.md](docs/install.md)
 - Tools, JSON shape, error codes → [docs/mcp-tools.md](docs/mcp-tools.md)
 - Dev, CI, publish → [HUMANS.md](HUMANS.md)
@@ -30,17 +30,17 @@ IDEs injecting this as context: do not re-link from rules.
 
 - **GraphQL** for composite reads (`repo_status`, `my_work`, `pr_preflight`, `release_readiness` PR resolution, `org_pulse`).
 - **REST** for: compare endpoint, workflow runs, job log download, behind-base count.
-- **Concurrency:** `asyncPool` with parallelism 4 (same pattern as `mcp-multi-root-git`).
+- **Concurrency:** `asyncPool` parallelism 4 (same pattern as `mcp-multi-root-git`).
 
 ## Changing contracts
 
-- **`MCP_JSON_FORMAT_VERSION`** (currently `"1"`): bump on incompatible JSON changes.
+- **`MCP_JSON_FORMAT_VERSION`** (now `"1"`): bump on incompatible JSON changes.
 - **Public tool surface:** rename/add → update [docs/mcp-tools.md](docs/mcp-tools.md) + [README.md](README.md).
 - **Auth changes:** update [docs/install.md](docs/install.md) `env` examples.
 
 ## Validate + CI
 
-Local: `bun run build` | `bun run check` | `bun run test`. CI ([`ci.yml`](.github/workflows/ci.yml)) runs same on PRs + `main` after `bun install --frozen-lockfile`, uploads prerelease `npm pack` artifact. Tag `v*.*.*` matching `package.json` version → [`release.yml`](.github/workflows/release.yml) publishes to GitHub Packages as `@rethunk-ai/github-mcp` + cuts GitHub Release. npmjs publish is manual (see [HUMANS.md](HUMANS.md)).
+Local: `bun run build` | `bun run check` | `bun run test`. CI ([`ci.yml`](.github/workflows/ci.yml)) runs same on PRs + `main` after `bun install --frozen-lockfile`, uploads prerelease `npm pack` artifact. Tag `v*.*.*` matching `package.json` version → [`release.yml`](.github/workflows/release.yml) publishes GitHub Packages as `@rethunk-ai/github-mcp` + cuts GitHub Release. npmjs publish manual (see [HUMANS.md](HUMANS.md)).
 
 Optional [`.githooks/`](.githooks): `bun run setup-hooks` once per clone. pre-commit=`check`; pre-push=frozen install + build + check + test.
 
@@ -50,4 +50,4 @@ Dogfood from clone: [docs/install.md](docs/install.md) — *From source*.
 
 ## Commits
 
-Conventional Commits. Small themed commits. Why-focused messages. Stage + commit in one invocation per batch.
+Conventional Commits. Small themed commits. Why-focused messages. Stage + commit one invocation per batch.
