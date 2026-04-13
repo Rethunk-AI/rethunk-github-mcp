@@ -111,10 +111,9 @@ describe("parseGitHubRemoteUrl", () => {
 
 describe("resolveLocalRepoRemote", () => {
   test("resolves current repo origin", () => {
-    // This repo has a GitHub origin — exercises the git + parse path
-    const result = resolveLocalRepoRemote(
-      "/usr/local/src/com.github/Rethunk-AI/rethunk-github-mcp",
-    );
+    // bun test runs from the repo root, which is a git clone with a GitHub
+    // origin — exercises the full git + parse path.
+    const result = resolveLocalRepoRemote(process.cwd());
     expect(result).toEqual({ owner: "Rethunk-AI", repo: "rethunk-github-mcp" });
   });
 
