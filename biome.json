@@ -23,6 +23,6 @@
     }
   },
   "files": {
-    "includes": ["src/**/*", "*.json", "*.md"]
+    "includes": ["src/**/*", "*.json", "*.md", "!.mcp.json"]
   }
 }

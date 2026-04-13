@@ -8,3 +8,6 @@ dist/
 # Editor / local (keep repo tree clean)
 .DS_Store
 Thumbs.db
+
+# Sandbox / AI tooling
+.mcp.json
