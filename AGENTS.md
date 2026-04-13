@@ -25,6 +25,10 @@ IDEs injecting context: don't re-link from rules.
 | [`src/server/release-readiness-tool.ts`](src/server/release-readiness-tool.ts) | `release_readiness` — what-would-ship-now |
 | [`src/server/ci-diagnosis-tool.ts`](src/server/ci-diagnosis-tool.ts) | `ci_diagnosis` — why-is-CI-red |
 | [`src/server/org-pulse-tool.ts`](src/server/org-pulse-tool.ts) | `org_pulse` — org-wide activity dashboard |
+| [`src/server/pin-drift-tool.ts`](src/server/pin-drift-tool.ts) | `pin_drift` — upstream pin drift audit |
+| [`src/server/ecosystem-activity-tool.ts`](src/server/ecosystem-activity-tool.ts) | `ecosystem_activity` — cross-repo commit feed |
+| [`src/server/module-pin-hint-tool.ts`](src/server/module-pin-hint-tool.ts) | `module_pin_hint` — Go pseudo-version formatter |
+| [`src/server/compare-refs.ts`](src/server/compare-refs.ts) | Shared: `resolveRef`, `fetchCommitHistory`, `countBehind` |
 
 ## API strategy
 

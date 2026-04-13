@@ -17,6 +17,9 @@
 | **`release_readiness`** | What would ship now: unreleased commits, associated PRs, CI on head, diff stats |
 | **`ci_diagnosis`** | Why is CI red: failed run logs (tail-truncated), trigger commit, run URL |
 | **`org_pulse`** | Org-wide dashboard: failing CI, stale PRs, unreviewed PRs across all active repos |
+| **`pin_drift`** | Audit upstream pins in a local repo: how far is each go.mod/submodule/package.json pin behind upstream? |
+| **`ecosystem_activity`** | Merged commit feed across multiple repos since a given timestamp or `"48h"` / `"7d"` duration |
+| **`module_pin_hint`** | Return the correct Go pseudo-version string (`v0.0.0-YYYYMMDDHHMMSS-sha12`) for any repo ref |
 
 All tools are **read-only** and support **markdown** (default) or **JSON** output.
 

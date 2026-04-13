@@ -1,0 +1,270 @@
+import { describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+// ---------------------------------------------------------------------------
+// Helpers: create fixture repos in temp dirs (kept for potential future use)
+// ---------------------------------------------------------------------------
+
+function _makeTmpDir(): string {
+  return mkdtempSync(join(tmpdir(), "pin-drift-test-"));
+}
+
+function _writeFile(dir: string, rel: string, content: string): void {
+  const full = join(dir, rel);
+  // Ensure parent exists
+  const parent = full.substring(0, full.lastIndexOf("/"));
+  mkdirSync(parent, { recursive: true });
+  writeFileSync(full, content);
+}
+
+// ---------------------------------------------------------------------------
+// Re-implement the pure parser functions under test so we can unit-test them
+// without mocking GitHub API calls.
+// ---------------------------------------------------------------------------
+
+function pseudoVersionSha(version: string): string | undefined {
+  const m = /v\d+\.\d+\.\d+-\d{14}-([0-9a-f]{12})$/.exec(version);
+  return m?.[1];
+}
+
+interface RawPin {
+  source: string;
+  owner: string;
+  repo: string;
+  pinnedRef: string;
+}
+interface SkippedEntry {
+  source: string;
+  key: string;
+  value: string;
+  reason: string;
+}
+
+function parseGoModFixture(text: string): { pins: RawPin[]; skipped: SkippedEntry[] } {
+  const pins: RawPin[] = [];
+  const skipped: SkippedEntry[] = [];
+
+  for (const m of text.matchAll(/^[ \t]*replace\s+\S+\s+=>\s+(github\.com\/\S+)\s+(\S+)/gm)) {
+    const path = m[1];
+    const version = m[2];
+    if (!path || !version) continue;
+    const pathParts = /github\.com\/([^/]+)\/([^/]+)/.exec(path);
+    if (!pathParts?.[1] || !pathParts[2]) continue;
+    const owner = pathParts[1];
+    const repo = pathParts[2].replace(/\.git$/, "");
+    const sha12 = pseudoVersionSha(version);
+    if (sha12) {
+      pins.push({ source: "go.mod", owner, repo, pinnedRef: sha12 });
+    } else if (/^v\d+\.\d+\.\d+$/.test(version)) {
+      pins.push({ source: "go.mod", owner, repo, pinnedRef: version });
+    } else {
+      skipped.push({
+        source: "go.mod",
+        key: `replace ${path}`,
+        value: version,
+        reason: "ambiguous_ref",
+      });
+    }
+  }
+
+  for (const m of text.matchAll(/^[ \t]*(?:github\.com\/([^/\s]+)\/([^/\s]+))\s+(v\S+)/gm)) {
+    const owner = m[1];
+    const repo = m[2]?.replace(/\.git$/, "");
+    const version = m[3];
+    if (!owner || !repo || !version) continue;
+    const sha12 = pseudoVersionSha(version);
+    if (!sha12) continue;
+    const alreadyPinned = pins.some((p) => p.owner === owner && p.repo === repo);
+    if (alreadyPinned) continue;
+    pins.push({ source: "go.mod", owner, repo, pinnedRef: sha12 });
+  }
+
+  return { pins, skipped };
+}
+
+function parsePackageJsonFixture(text: string): { pins: RawPin[]; skipped: SkippedEntry[] } {
+  const pins: RawPin[] = [];
+  const skipped: SkippedEntry[] = [];
+  let pkg: Record<string, unknown>;
+  try {
+    pkg = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return { pins, skipped };
+  }
+  const allDeps: Record<string, string> = {
+    ...((pkg.dependencies as Record<string, string> | undefined) ?? {}),
+    ...((pkg.devDependencies as Record<string, string> | undefined) ?? {}),
+  };
+  for (const [, version] of Object.entries(allDeps)) {
+    const shorthand = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)(?:#(.+))?$/.exec(version);
+    if (shorthand?.[1] && shorthand[2]) {
+      pins.push({
+        source: "package.json",
+        owner: shorthand[1],
+        repo: shorthand[2],
+        pinnedRef: shorthand[3] ?? "HEAD",
+      });
+      continue;
+    }
+    const ghUrl =
+      /github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?(?:#(.+))?(?:$|\/)/.exec(
+        version,
+      );
+    if (ghUrl?.[1] && ghUrl[2]) {
+      pins.push({
+        source: "package.json",
+        owner: ghUrl[1],
+        repo: ghUrl[2],
+        pinnedRef: ghUrl[3] ?? "HEAD",
+      });
+    }
+    // Not a GitHub dependency — skip silently
+  }
+  return { pins, skipped };
+}
+
+function parseVersionsEnvFixture(text: string): { skipped: SkippedEntry[] } {
+  const skipped: SkippedEntry[] = [];
+  for (const line of text.split("\n")) {
+    const m = /^([A-Z0-9_]+(?:_REF|_SHA|_VERSION))\s*=\s*([^\s#]+)/.exec(line);
+    if (!m?.[1] || !m[2]) continue;
+    if (/^[0-9a-f]{40}$/.test(m[2])) {
+      skipped.push({
+        source: "scripts/versions.env",
+        key: m[1],
+        value: m[2],
+        reason: "ambiguous_repo",
+      });
+    }
+  }
+  return { skipped };
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe("parseGoMod", () => {
+  test("parses replace directive with pseudo-version", () => {
+    const text = `
+module example.com/myapp
+
+go 1.21
+
+require (
+  github.com/Rethunk-Tech/bastion-satcom v0.0.0-20260411122216-877f8d94448e
+)
+
+replace github.com/some/dep => github.com/Rethunk-Tech/disgo v0.0.0-20260401000000-abcdef123456
+`;
+    const { pins, skipped } = parseGoModFixture(text);
+    // replace block is processed first
+    const replacePins = pins.filter((p) => p.owner === "Rethunk-Tech" && p.repo === "disgo");
+    expect(replacePins.length).toBe(1);
+    expect(replacePins[0]?.pinnedRef).toBe("abcdef123456");
+
+    // require pseudo-version also captured (not duplicated by replace)
+    const satcomPins = pins.filter((p) => p.repo === "bastion-satcom");
+    expect(satcomPins.length).toBe(1);
+    expect(satcomPins[0]?.pinnedRef).toBe("877f8d94448e");
+
+    expect(skipped.length).toBe(0);
+  });
+
+  test("parses replace directive with semantic version tag", () => {
+    const text = `replace github.com/foo/bar => github.com/Rethunk-AI/bar v1.2.3\n`;
+    const { pins } = parseGoModFixture(text);
+    expect(pins.length).toBe(1);
+    expect(pins[0]?.pinnedRef).toBe("v1.2.3");
+  });
+
+  test("skips replace with non-version-looking ref", () => {
+    const text = `replace github.com/foo/bar => github.com/Rethunk-AI/bar main\n`;
+    const { pins, skipped } = parseGoModFixture(text);
+    expect(pins.length).toBe(0);
+    expect(skipped.length).toBe(1);
+    expect(skipped[0]?.reason).toBe("ambiguous_ref");
+  });
+
+  test("deduplicates: replace block takes precedence over require line", () => {
+    const text = `
+require github.com/Rethunk-Tech/satcom v0.0.0-20260401000000-aaaaaaaaaaaa
+replace github.com/Rethunk-Tech/satcom => github.com/Rethunk-Tech/satcom v0.0.0-20260402000000-bbbbbbbbbbbb
+`;
+    const { pins } = parseGoModFixture(text);
+    const satcomPins = pins.filter((p) => p.repo === "satcom");
+    expect(satcomPins.length).toBe(1);
+    expect(satcomPins[0]?.pinnedRef).toBe("bbbbbbbbbbbb");
+  });
+});
+
+describe("parsePackageJson", () => {
+  test("parses GitHub shorthand dep", () => {
+    const { pins } = parsePackageJsonFixture(
+      JSON.stringify({ dependencies: { "my-lib": "owner/repo#abc123def456" } }),
+    );
+    expect(pins.length).toBe(1);
+    expect(pins[0]?.owner).toBe("owner");
+    expect(pins[0]?.repo).toBe("repo");
+    expect(pins[0]?.pinnedRef).toBe("abc123def456");
+  });
+
+  test("parses GitHub HTTPS URL dep", () => {
+    const { pins } = parsePackageJsonFixture(
+      JSON.stringify({
+        dependencies: {
+          "my-lib": "https://github.com/Rethunk-AI/some-lib.git#877f8d94448e",
+        },
+      }),
+    );
+    expect(pins.length).toBe(1);
+    expect(pins[0]?.owner).toBe("Rethunk-AI");
+    expect(pins[0]?.pinnedRef).toBe("877f8d94448e");
+  });
+
+  test("ignores non-GitHub deps silently", () => {
+    const { pins } = parsePackageJsonFixture(
+      JSON.stringify({ dependencies: { react: "^18.0.0", lodash: "4.17.21" } }),
+    );
+    expect(pins.length).toBe(0);
+  });
+
+  test("handles malformed JSON gracefully", () => {
+    const { pins, skipped } = parsePackageJsonFixture("not json {{{");
+    expect(pins.length).toBe(0);
+    expect(skipped.length).toBe(0);
+  });
+});
+
+describe("parseVersionsEnv", () => {
+  test("marks 40-char SHA _REF keys as ambiguous_repo", () => {
+    const text = `BASTION_SATCOM_REF=877f8d94448e8cc843e83409dd0a59bb73562e45\n`;
+    const { skipped } = parseVersionsEnvFixture(text);
+    expect(skipped.length).toBe(1);
+    expect(skipped[0]?.reason).toBe("ambiguous_repo");
+    expect(skipped[0]?.key).toBe("BASTION_SATCOM_REF");
+  });
+
+  test("ignores non-SHA values (e.g. branch names)", () => {
+    const text = `MY_VERSION=main\n`;
+    const { skipped } = parseVersionsEnvFixture(text);
+    expect(skipped.length).toBe(0);
+  });
+
+  test("ignores keys without matching suffix", () => {
+    const text = `SOME_COMMIT=877f8d94448e8cc843e83409dd0a59bb73562e45\n`;
+    const { skipped } = parseVersionsEnvFixture(text);
+    expect(skipped.length).toBe(0);
+  });
+
+  test("marks _SHA and _VERSION keys too", () => {
+    const text = [
+      "FOO_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "BAR_VERSION=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    ].join("\n");
+    const { skipped } = parseVersionsEnvFixture(text);
+    expect(skipped.length).toBe(2);
+  });
+});

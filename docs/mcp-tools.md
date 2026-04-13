@@ -17,6 +17,9 @@ MCP clients expose tools as `{serverName}_{toolName}`. With the server registere
 | `release_readiness` | `rethunk-github_release_readiness` | What would ship if we release now? Unreleased commits, associated PRs, CI on head, diff stats. |
 | `ci_diagnosis` | `rethunk-github_ci_diagnosis` | Why is CI red? Resolves failed run, extracts failed job logs (tail-truncated), trigger commit. |
 | `org_pulse` | `rethunk-github_org_pulse` | Org-wide activity dashboard: failing CI, stale PRs, unreviewed PRs across all recently-active repos. |
+| `pin_drift` | `rethunk-github_pin_drift` | Audit upstream dependency pins in a local repo: how far is each go.mod/submodule/versions.env/package.json pin behind the upstream default branch? |
+| `ecosystem_activity` | `rethunk-github_ecosystem_activity` | Merged chronological commit feed across multiple repos since a given timestamp or relative duration (e.g. `48h`). |
+| `module_pin_hint` | `rethunk-github_module_pin_hint` | Return the Go pseudo-version string (`v0.0.0-YYYYMMDDHHMMSS-sha12`) for any repo ref. |
 
 All tools are **read-only** (`readOnlyHint: true`). Pass **`format: "json"`** for structured JSON instead of markdown (default).
 
@@ -37,6 +40,7 @@ Payloads are minified (`JSON.stringify`, no pretty-print). `MCP_JSON_FORMAT_VERS
 | `compare_failed` | `base...head` comparison failed (bad ref, etc.). |
 | `query_failed` | General API failure (message included). |
 | `ci_diagnosis_failed` | Failed to resolve or diagnose the CI run. |
+| `unsupported_language` | `module_pin_hint` was called with a `language` other than `"go"`. |
 
 ---
 
@@ -248,6 +252,128 @@ Logs are **tail-truncated** (last N lines kept) since failure output is at the b
 ```
 
 The `attention` array is sorted by urgency: failing CI repos first, then by stale PR count. Healthy repos (no failing CI, no stale/unreviewed PRs) are listed only in markdown mode.
+
+---
+
+### `pin_drift`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `localPath` | `string` | yes | — | Absolute path to the local repo whose dependency pins to audit. |
+| `pinFiles` | `string[]` | no | auto-detect | Files to parse. Auto-detection tries: `go.mod`, `.gitmodules`, `scripts/versions.env`, `package.json`. |
+| `ownerAllowlist` | `string[]` | no | — | Only audit pins whose GitHub owner matches one of these values (case-insensitive). Useful to skip third-party upstreams. |
+| `grep` | `string` | no | — | Regex filter: only commits whose message matches are counted in `grepMatches`. All commits still count toward `behindBy`. |
+| `format` | `"markdown" \| "json"` | no | `"markdown"` | Output format. |
+
+**JSON output:**
+
+```jsonc
+{
+  "localPath": "/home/me/myapp",
+  "pins": [{
+    "source": "go.mod",
+    "owner": "Rethunk-Tech",
+    "repo": "bastion-satcom",
+    "pinnedRef": "877f8d94448e",
+    "pinnedDate": "2026-04-11T12:22:16Z",
+    "defaultBranch": "main",
+    "headSha": "6589cad7c93e5fd59ece17284b4636c525bf8cf0",
+    "behindBy": 17,
+    "grepMatches": 3,           // only when grep supplied
+    "commits": [{ "sha7": "abc1234", "message": "Fix bug", "author": "alice", "date": "2026-04-12T..." }],
+    "stale": true
+  }],
+  "skipped": [{
+    "source": "scripts/versions.env",
+    "key": "BASTION_SATCOM_REF",
+    "value": "877f8d94448e8cc843e83409dd0a59bb73562e45",
+    "reason": "ambiguous_repo"
+  }],
+  "summary": { "totalPins": 4, "stale": 2, "upToDate": 2 }
+}
+```
+
+**Pin source notes:**
+
+- `go.mod`: handles `replace` directives and `require` lines with pseudo-versions (`v0.0.0-YYYYMMDDHHMMSS-sha12`). The 12-char SHA prefix is resolved to a full SHA via the GitHub API.
+- `.gitmodules`: reads submodule paths + URLs, uses `git ls-tree HEAD <path>` to obtain the pinned commit SHA.
+- `scripts/versions.env`: shell `KEY=VALUE` lines whose key ends in `_REF`, `_SHA`, or `_VERSION` and whose value is a 40-char hex SHA. These are always reported under `skipped` with `reason: "ambiguous_repo"` because the file does not encode which GitHub repo each key belongs to.
+- `package.json`: `dependencies`/`devDependencies` whose version is a GitHub shorthand (`owner/repo#ref`) or HTTPS GitHub URL.
+
+`behindBy: -1` signals an error resolving that pin (e.g. upstream repo not found).
+
+---
+
+### `ecosystem_activity`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `repos` | `(RepoRef \| LocalPath)[]` | yes | — | 1–20 repos. Each is `{ owner, repo }` or `{ localPath }`. |
+| `since` | `string` | yes | — | ISO8601 timestamp or relative duration: `"48h"`, `"7d"`. |
+| `paths` | `string[]` | no | — | Filter to commits touching these paths (applied per repo via GraphQL `history(path:...)`). Multiple paths are OR'd together. |
+| `grep` | `string` | no | — | Regex filter applied client-side to commit message subjects. |
+| `maxCommitsPerRepo` | `int` | no | `50` | 1–200 commits fetched per repo before merge. |
+| `format` | `"markdown" \| "json"` | no | `"markdown"` | Output format. |
+
+**JSON output:**
+
+```jsonc
+{
+  "since": "2026-04-10T17:19:40Z",
+  "repos": [
+    { "owner": "Rethunk-Tech", "repo": "bastion-satcom", "commitCount": 12 },
+    { "owner": "Rethunk-AI", "repo": "some-lib", "commitCount": 0, "error": "not_found" }
+  ],
+  "commits": [{
+    "owner": "Rethunk-Tech",
+    "repo": "bastion-satcom",
+    "sha7": "abc1234",
+    "message": "Fix SATCOM reconnect",
+    "author": "alice",
+    "date": "2026-04-12T08:00:00Z",
+    "pr": { "number": 42, "title": "Fix SATCOM reconnect" }  // null when no (#N) in message
+  }],  // merged + sorted date desc
+  "summary": {
+    "totalCommits": 47,
+    "repoBreakdown": { "bastion-satcom": 12, "some-lib": 35 }
+  }
+}
+```
+
+Commits are merged across repos and sorted newest-first. Per-repo errors do not fail the batch.
+
+---
+
+### `module_pin_hint`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `owner` | `string` | yes | — | GitHub owner or organization. |
+| `repo` | `string` | yes | — | GitHub repository name. |
+| `ref` | `string` | no | default branch HEAD | Branch, tag, or SHA to resolve. |
+| `language` | `string` | no | `"go"` | Module system. Only `"go"` is supported in MVP. |
+| `format` | `"markdown" \| "json"` | no | `"markdown"` | Output format. |
+
+**JSON output:**
+
+```jsonc
+{
+  "owner": "Rethunk-Tech",
+  "repo": "bastion-satcom",
+  "ref": "main",
+  "resolvedSha": "6589cad7c93e5fd59ece17284b4636c525bf8cf0",
+  "committerDate": "2026-04-13T00:17:01Z",
+  "goPseudoVersion": "v0.0.0-20260413001701-6589cad7c93e"
+}
+```
+
+The pseudo-version is formatted as `v0.0.0-YYYYMMDDHHMMSS-<first12SHAchars>` using the committer date in UTC. Use this when pinning a module in `go.mod` via a SHA rather than a release tag.
 
 ---
 

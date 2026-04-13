@@ -1,0 +1,180 @@
+import type { FastMCP } from "fastmcp";
+import { z } from "zod";
+import { gateAuth } from "./github-auth.js";
+import { graphqlQuery } from "./github-client.js";
+import { jsonRespond } from "./json.js";
+import { FormatSchema } from "./schemas.js";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Format a UTC ISO8601 date string as `YYYYMMDDHHMMSS`.
+ * Input: "2026-04-13T00:17:01Z" → "20260413001701"
+ */
+function formatPseudoVersionDate(isoDate: string): string {
+  // Strip non-digit chars, keep only the 14-char datetime portion
+  const d = new Date(isoDate);
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return (
+    String(d.getUTCFullYear()) +
+    pad(d.getUTCMonth() + 1) +
+    pad(d.getUTCDate()) +
+    pad(d.getUTCHours()) +
+    pad(d.getUTCMinutes()) +
+    pad(d.getUTCSeconds())
+  );
+}
+
+/** Build a Go pseudo-version: v0.0.0-YYYYMMDDHHMMSS-<sha12> */
+function buildGoPseudoVersion(committedDate: string, fullSha: string): string {
+  const ts = formatPseudoVersionDate(committedDate);
+  const sha12 = fullSha.substring(0, 12);
+  return `v0.0.0-${ts}-${sha12}`;
+}
+
+// ---------------------------------------------------------------------------
+// GraphQL
+// ---------------------------------------------------------------------------
+
+interface CommitObjectResult {
+  repository: {
+    defaultBranchRef?: { name: string; target?: { oid: string; committedDate: string } } | null;
+    object?: { oid: string; committedDate: string } | null;
+  };
+}
+
+async function resolveCommit(
+  owner: string,
+  repo: string,
+  ref: string | undefined,
+): Promise<{ oid: string; committedDate: string; resolvedRef: string } | null> {
+  if (ref) {
+    // Explicit ref: fetch object by expression
+    const query = `query($owner:String!,$repo:String!,$expr:String!){
+      repository(owner:$owner,name:$repo){
+        object(expression:$expr){
+          ...on Commit{ oid committedDate }
+        }
+      }
+    }`;
+    const data = await graphqlQuery<CommitObjectResult>(query, { owner, repo, expr: ref });
+    const obj = data.repository.object;
+    if (!obj?.oid) return null;
+    return { oid: obj.oid, committedDate: obj.committedDate, resolvedRef: ref };
+  }
+
+  // Default branch HEAD
+  const query = `query($owner:String!,$repo:String!){
+    repository(owner:$owner,name:$repo){
+      defaultBranchRef{
+        name
+        target{ ...on Commit{ oid committedDate } }
+      }
+    }
+  }`;
+  const data = await graphqlQuery<CommitObjectResult>(query, { owner, repo });
+  const dbRef = data.repository.defaultBranchRef;
+  if (!dbRef?.target?.oid) return null;
+  return {
+    oid: dbRef.target.oid,
+    committedDate: dbRef.target.committedDate ?? "",
+    resolvedRef: dbRef.name,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Tool registration
+// ---------------------------------------------------------------------------
+
+export function registerModulePinHintTool(server: FastMCP): void {
+  server.addTool({
+    name: "module_pin_hint",
+    description:
+      "Given a (repo, ref) pair, return the correctly-formatted Go module pseudo-version " +
+      "string (v0.0.0-YYYYMMDDHHMMSS-<sha12>) in UTC. Useful when pinning a module via a " +
+      "git SHA in go.mod. One GraphQL call per invocation.",
+    annotations: { readOnlyHint: true },
+    parameters: z.object({
+      owner: z.string().describe("GitHub owner or organization."),
+      repo: z.string().describe("GitHub repository name."),
+      ref: z
+        .string()
+        .optional()
+        .describe(
+          "Branch, tag, or SHA to resolve. Defaults to the repository default branch HEAD.",
+        ),
+      language: z
+        .string()
+        .optional()
+        .default("go")
+        .describe("Module system. Only 'go' is supported in MVP."),
+      format: FormatSchema,
+    }),
+    execute: async (args) => {
+      const auth = gateAuth();
+      if (!auth.ok) return jsonRespond(auth.body);
+
+      const { owner, repo, language } = args;
+      const ref = args.ref;
+
+      if (language !== "go") {
+        return jsonRespond({
+          error: "unsupported_language",
+          language,
+          hint: "Only 'go' is supported in the current version.",
+        });
+      }
+
+      try {
+        const commit = await resolveCommit(owner, repo, ref);
+        if (!commit) {
+          return jsonRespond({
+            error: "not_found",
+            owner,
+            repo,
+            ref: ref ?? "(default branch)",
+          });
+        }
+
+        const goPseudoVersion = buildGoPseudoVersion(commit.committedDate, commit.oid);
+
+        const result = {
+          owner,
+          repo,
+          ref: commit.resolvedRef,
+          resolvedSha: commit.oid,
+          committerDate: commit.committedDate,
+          goPseudoVersion,
+        };
+
+        if (args.format === "json") return jsonRespond(result);
+
+        // Markdown
+        const lines = [
+          `# Go Pseudo-Version: ${owner}/${repo}`,
+          "",
+          `**Ref:** \`${commit.resolvedRef}\``,
+          `**SHA:** \`${commit.oid}\``,
+          `**Committed:** ${commit.committedDate}`,
+          "",
+          "## Pseudo-version",
+          "```",
+          goPseudoVersion,
+          "```",
+          "",
+          "## go.mod snippet",
+          "```go",
+          `require github.com/${owner}/${repo} ${goPseudoVersion}`,
+          "```",
+        ];
+
+        return lines.join("\n");
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return jsonRespond({ error: "query_failed", owner, repo, message: msg });
+      }
+    },
+  });
+}
