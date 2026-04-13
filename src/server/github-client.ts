@@ -77,6 +77,19 @@ export async function parallelApi<T, R>(
   return asyncPool(items, GITHUB_API_PARALLELISM, fn);
 }
 
+/** Parse a GitHub remote URL into owner/repo. Handles SSH and HTTPS forms. */
+export function parseGitHubRemoteUrl(url: string): { owner: string; repo: string } | undefined {
+  // SSH: git@github.com:owner/repo.git
+  const ssh = /github\.com[:/]([^/]+)\/([^/.]+?)(?:\.git)?$/.exec(url);
+  if (ssh?.[1] && ssh[2]) return { owner: ssh[1], repo: ssh[2] };
+
+  // HTTPS: https://github.com/owner/repo.git
+  const https = /github\.com\/([^/]+)\/([^/.]+?)(?:\.git)?$/.exec(url);
+  if (https?.[1] && https[2]) return { owner: https[1], repo: https[2] };
+
+  return undefined;
+}
+
 /**
  * Resolve a local git clone's GitHub remote to owner/repo.
  * Parses the `origin` remote URL.
@@ -91,14 +104,7 @@ export function resolveLocalRepoRemote(
       timeout: 5_000,
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
-
-    // SSH: git@github.com:owner/repo.git
-    const ssh = /github\.com[:/]([^/]+)\/([^/.]+?)(?:\.git)?$/.exec(url);
-    if (ssh?.[1] && ssh[2]) return { owner: ssh[1], repo: ssh[2] };
-
-    // HTTPS: https://github.com/owner/repo.git
-    const https = /github\.com\/([^/]+)\/([^/.]+?)(?:\.git)?$/.exec(url);
-    if (https?.[1] && https[2]) return { owner: https[1], repo: https[2] };
+    return parseGitHubRemoteUrl(url);
   } catch {
     // Not a git repo or no origin
   }
