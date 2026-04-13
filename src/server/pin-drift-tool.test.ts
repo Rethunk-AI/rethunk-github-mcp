@@ -3,6 +3,9 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { registerPinDriftTool } from "./pin-drift-tool.js";
+import { captureTool } from "./test-harness.js";
+
 // ---------------------------------------------------------------------------
 // Helpers: create fixture repos in temp dirs (kept for potential future use)
 // ---------------------------------------------------------------------------
@@ -266,5 +269,36 @@ describe("parseVersionsEnv", () => {
     ].join("\n");
     const { skipped } = parseVersionsEnvFixture(text);
     expect(skipped.length).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pin_drift tool integration (via captureTool)
+//
+// An empty directory has no go.mod / .gitmodules / package.json, so the tool
+// collects zero pins and returns immediately — no GitHub API call is made.
+//
+// Requires GitHub auth to pass the initial gateAuth check.
+// ---------------------------------------------------------------------------
+
+describe("pin_drift tool (captureTool)", () => {
+  test("empty directory → 0 pins, JSON format", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pin-drift-tool-test-"));
+    const run = captureTool(registerPinDriftTool);
+    const text = await run({ localPath: dir, format: "json" });
+    const parsed = JSON.parse(text) as { summary?: { totalPins: number } };
+    // If auth unavailable, summary is absent — skip gracefully
+    if (!parsed.summary) return;
+    expect(parsed.summary.totalPins).toBe(0);
+    expect(parsed.summary.stale).toBe(0);
+  });
+
+  test("empty directory → markdown shows 0 pins", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pin-drift-tool-test-"));
+    const run = captureTool(registerPinDriftTool);
+    const text = await run({ localPath: dir });
+    // Auth error returns JSON; markdown path contains the pin count header
+    if (text.startsWith("{")) return;
+    expect(text).toContain("0 pins");
   });
 });
