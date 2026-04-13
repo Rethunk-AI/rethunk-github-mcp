@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { asyncPool } from "./github-client.js";
+import {
+  asyncPool,
+  parallelApi,
+  parseGitHubRemoteUrl,
+  resolveLocalRepoRemote,
+} from "./github-client.js";
 
 describe("asyncPool", () => {
   test("processes all items and returns results", async () => {
@@ -51,5 +56,69 @@ describe("asyncPool", () => {
       return n;
     });
     expect(order).toEqual([1, 2, 3]);
+  });
+});
+
+describe("parallelApi", () => {
+  test("returns results for all items", async () => {
+    const results = await parallelApi([1, 2, 3], async (n) => n * 2);
+    expect(results.sort((a, b) => a - b)).toEqual([2, 4, 6]);
+  });
+
+  test("handles empty input", async () => {
+    const results = await parallelApi([], async (n: number) => n);
+    expect(results).toEqual([]);
+  });
+});
+
+describe("parseGitHubRemoteUrl", () => {
+  test("parses SSH with .git suffix", () => {
+    expect(parseGitHubRemoteUrl("git@github.com:owner/repo.git")).toEqual({
+      owner: "owner",
+      repo: "repo",
+    });
+  });
+
+  test("parses SSH without .git suffix", () => {
+    expect(parseGitHubRemoteUrl("git@github.com:owner/repo")).toEqual({
+      owner: "owner",
+      repo: "repo",
+    });
+  });
+
+  test("parses HTTPS with .git suffix", () => {
+    expect(parseGitHubRemoteUrl("https://github.com/owner/repo.git")).toEqual({
+      owner: "owner",
+      repo: "repo",
+    });
+  });
+
+  test("parses HTTPS without .git suffix", () => {
+    expect(parseGitHubRemoteUrl("https://github.com/owner/repo")).toEqual({
+      owner: "owner",
+      repo: "repo",
+    });
+  });
+
+  test("returns undefined for non-GitHub URL", () => {
+    expect(parseGitHubRemoteUrl("https://gitlab.com/owner/repo.git")).toBeUndefined();
+  });
+
+  test("returns undefined for empty string", () => {
+    expect(parseGitHubRemoteUrl("")).toBeUndefined();
+  });
+});
+
+describe("resolveLocalRepoRemote", () => {
+  test("resolves current repo origin", () => {
+    // This repo has a GitHub origin — exercises the git + parse path
+    const result = resolveLocalRepoRemote(
+      "/usr/local/src/com.github/Rethunk-AI/rethunk-github-mcp",
+    );
+    expect(result).toEqual({ owner: "Rethunk-AI", repo: "rethunk-github-mcp" });
+  });
+
+  test("returns undefined for non-git path", () => {
+    expect(resolveLocalRepoRemote("/tmp")).toBeUndefined();
   });
 });
