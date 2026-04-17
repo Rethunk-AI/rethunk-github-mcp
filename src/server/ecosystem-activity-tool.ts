@@ -2,7 +2,7 @@ import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
 import { graphqlQuery, parallelApi, resolveLocalRepoRemote } from "./github-client.js";
-import { jsonRespond, truncateText } from "./json.js";
+import { errorRespond, jsonRespond, truncateText } from "./json.js";
 import { FormatSchema, LocalOrRemoteRepoSchema } from "./schemas.js";
 
 // ---------------------------------------------------------------------------
@@ -194,7 +194,7 @@ export function registerEcosystemActivityTool(server: FastMCP): void {
     }),
     execute: async (args) => {
       const auth = gateAuth();
-      if (!auth.ok) return jsonRespond(auth.body);
+      if (!auth.ok) return errorRespond(auth.envelope);
 
       const sinceIso = parseSince(args.since);
       const grepRe = args.grep ? new RegExp(args.grep, "i") : undefined;

@@ -7,7 +7,7 @@ import { z } from "zod";
 import { countBehind, resolveRef } from "./compare-refs.js";
 import { gateAuth } from "./github-auth.js";
 import { graphqlQuery, parallelApi } from "./github-client.js";
-import { jsonRespond } from "./json.js";
+import { errorRespond, jsonRespond } from "./json.js";
 import { FormatSchema } from "./schemas.js";
 
 // ---------------------------------------------------------------------------
@@ -322,7 +322,7 @@ export function registerPinDriftTool(server: FastMCP): void {
     }),
     execute: async (args) => {
       const auth = gateAuth();
-      if (!auth.ok) return jsonRespond(auth.body);
+      if (!auth.ok) return errorRespond(auth.envelope);
 
       const { localPath, ownerAllowlist, grep } = args;
       const grepRe = grep ? new RegExp(grep, "i") : undefined;

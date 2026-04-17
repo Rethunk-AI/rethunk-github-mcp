@@ -2,7 +2,7 @@ import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
 import { getOctokit, graphqlQuery } from "./github-client.js";
-import { jsonRespond, truncateText } from "./json.js";
+import { errorRespond, jsonRespond, truncateText } from "./json.js";
 import { FormatSchema, RepoRefSchema } from "./schemas.js";
 
 interface PRNode {
@@ -126,7 +126,7 @@ export function registerReleaseReadinessTool(server: FastMCP): void {
     }),
     execute: async (args) => {
       const auth = gateAuth();
-      if (!auth.ok) return jsonRespond(auth.body);
+      if (!auth.ok) return errorRespond(auth.envelope);
 
       const octokit = getOctokit();
       const { owner, repo, base, maxCommits } = args;

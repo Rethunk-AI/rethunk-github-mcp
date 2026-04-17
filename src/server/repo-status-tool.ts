@@ -4,7 +4,7 @@ import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
 import { graphqlQuery, parallelApi, resolveLocalRepoRemote } from "./github-client.js";
-import { jsonRespond, truncateText } from "./json.js";
+import { errorRespond, jsonRespond, truncateText } from "./json.js";
 import { FormatSchema, LocalOrRemoteRepoSchema } from "./schemas.js";
 
 interface StatusCheckNode {
@@ -134,7 +134,7 @@ export function registerRepoStatusTool(server: FastMCP): void {
     }),
     execute: async (args) => {
       const auth = gateAuth();
-      if (!auth.ok) return jsonRespond(auth.body);
+      if (!auth.ok) return errorRespond(auth.envelope);
 
       const results = await parallelApi(args.repos, async (repoRef) => {
         let owner: string;

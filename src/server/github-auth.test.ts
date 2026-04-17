@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { gateAuth, resetAuthCache } from "./github-auth.js";
 
 describe("gateAuth", () => {
-  test("returns github_auth_missing when no token is available", () => {
+  test("returns AUTH_MISSING envelope when no token is available", () => {
     const origGH = process.env.GITHUB_TOKEN;
     const origGHT = process.env.GH_TOKEN;
     delete process.env.GITHUB_TOKEN;
@@ -12,10 +12,12 @@ describe("gateAuth", () => {
 
     const result = gateAuth();
     // If gh CLI is installed and authed, this will succeed — that's fine.
-    // We only assert the shape is correct either way.
+    // We only assert the envelope shape is correct when auth fails.
     expect(result).toHaveProperty("ok");
     if (!result.ok) {
-      expect(result.body).toHaveProperty("error", "github_auth_missing");
+      expect(result.envelope.code).toBe("AUTH_MISSING");
+      expect(result.envelope.retryable).toBe(false);
+      expect(result.envelope.suggestedFix).toContain("GITHUB_TOKEN");
     }
 
     // Restore

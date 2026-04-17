@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process";
 
+import { type McpErrorEnvelope, mkError } from "./json.js";
+
 interface AuthOk {
   ok: true;
   token: string;
@@ -7,7 +9,7 @@ interface AuthOk {
 
 interface AuthError {
   ok: false;
-  body: Record<string, unknown>;
+  envelope: McpErrorEnvelope;
 }
 
 type AuthResult = AuthOk | AuthError;
@@ -46,10 +48,9 @@ export function gateAuth(): AuthResult {
 
   cached = {
     ok: false,
-    body: {
-      error: "github_auth_missing",
-      hint: "Set GITHUB_TOKEN or GH_TOKEN, or run `gh auth login`.",
-    },
+    envelope: mkError("AUTH_MISSING", "No GitHub credential available.", {
+      suggestedFix: "Set GITHUB_TOKEN or GH_TOKEN, or run `gh auth login`.",
+    }),
   };
   return cached;
 }
