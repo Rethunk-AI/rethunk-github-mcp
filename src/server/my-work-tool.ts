@@ -1,7 +1,7 @@
 import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
-import { graphqlQuery } from "./github-client.js";
+import { classifyError, graphqlQuery } from "./github-client.js";
 import { errorRespond, jsonRespond, truncateText } from "./json.js";
 import { FormatSchema } from "./schemas.js";
 
@@ -67,9 +67,8 @@ export function registerMyWorkTool(server: FastMCP): void {
             "query { viewer { login } }",
           );
           username = viewer.viewer.login;
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          return jsonRespond({ error: "graphql_error", message: msg });
+        } catch (err) {
+          return errorRespond(classifyError(err));
         }
       }
 
@@ -189,9 +188,8 @@ export function registerMyWorkTool(server: FastMCP): void {
         }
 
         return lines.join("\n");
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return jsonRespond({ error: "graphql_error", message: msg });
+      } catch (err) {
+        return errorRespond(classifyError(err));
       }
     },
   });
