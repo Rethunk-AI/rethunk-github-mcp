@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,8 +10,23 @@ import { captureTool } from "./test-harness.js";
 // Helpers: create fixture repos in temp dirs (kept for potential future use)
 // ---------------------------------------------------------------------------
 
+const TMP_DIRS: string[] = [];
+
+function makeTrackedTmpDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  TMP_DIRS.push(dir);
+  return dir;
+}
+
+afterAll(() => {
+  for (const dir of TMP_DIRS) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  TMP_DIRS.length = 0;
+});
+
 function _makeTmpDir(): string {
-  return mkdtempSync(join(tmpdir(), "pin-drift-test-"));
+  return makeTrackedTmpDir("pin-drift-test-");
 }
 
 function _writeFile(dir: string, rel: string, content: string): void {
@@ -283,7 +298,7 @@ describe("parseVersionsEnv", () => {
 
 describe("pin_drift tool (captureTool)", () => {
   test("empty directory → 0 pins, JSON format", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "pin-drift-tool-test-"));
+    const dir = makeTrackedTmpDir("pin-drift-tool-test-");
     const run = captureTool(registerPinDriftTool);
     const text = await run({ localPath: dir, format: "json" });
     const parsed = JSON.parse(text) as { summary?: { totalPins: number } };
@@ -294,7 +309,7 @@ describe("pin_drift tool (captureTool)", () => {
   });
 
   test("empty directory → markdown shows 0 pins", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "pin-drift-tool-test-"));
+    const dir = makeTrackedTmpDir("pin-drift-tool-test-");
     const run = captureTool(registerPinDriftTool);
     const text = await run({ localPath: dir });
     // Auth error returns JSON; markdown path contains the pin count header
