@@ -1,8 +1,13 @@
 import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
-import { graphqlQuery, parallelApi, resolveLocalRepoRemote } from "./github-client.js";
-import { errorRespond, jsonRespond, truncateText } from "./json.js";
+import {
+  classifyError,
+  graphqlQuery,
+  parallelApi,
+  resolveLocalRepoRemote,
+} from "./github-client.js";
+import { errorRespond, jsonRespond, type McpErrorEnvelope, mkError, truncateText } from "./json.js";
 import { FormatSchema, LocalOrRemoteRepoSchema } from "./schemas.js";
 
 // ---------------------------------------------------------------------------
@@ -43,7 +48,7 @@ interface RepoCommitResult {
   owner: string;
   repo: string;
   commitCount: number;
-  error?: string;
+  error?: McpErrorEnvelope;
   commits: EcosystemCommit[];
 }
 
@@ -119,9 +124,8 @@ async function fetchRepoCommits(
         allNodes.set(n.oid, n);
       }
     }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { owner, repo, commitCount: 0, error: msg, commits: [] };
+  } catch (err) {
+    return { owner, repo, commitCount: 0, error: classifyError(err), commits: [] };
   }
 
   const sorted = [...allNodes.values()].sort(
@@ -210,7 +214,11 @@ export function registerEcosystemActivityTool(server: FastMCP): void {
               owner: "unknown",
               repo: repoRef.localPath,
               commitCount: 0,
-              error: "local_repo_no_remote",
+              error: mkError(
+                "LOCAL_REPO_NO_REMOTE",
+                `No GitHub origin found for local path ${repoRef.localPath}`,
+                { suggestedFix: "Ensure the path is a git clone with a GitHub `origin` remote." },
+              ),
               commits: [],
             } as RepoCommitResult;
           }
@@ -286,7 +294,7 @@ export function registerEcosystemActivityTool(server: FastMCP): void {
         lines.push("");
         lines.push("## Errors");
         for (const r of errored) {
-          lines.push(`- ${r.owner}/${r.repo}: ${r.error}`);
+          lines.push(`- ${r.owner}/${r.repo}: (${r.error?.code}) ${r.error?.message}`);
         }
       }
 
