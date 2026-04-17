@@ -1,8 +1,8 @@
 import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
-import { getOctokit, graphqlQuery } from "./github-client.js";
-import { errorRespond, jsonRespond } from "./json.js";
+import { classifyError, getOctokit, graphqlQuery } from "./github-client.js";
+import { errorRespond, jsonRespond, mkError } from "./json.js";
 import { FormatSchema, RepoRefSchema } from "./schemas.js";
 
 interface ReviewNode {
@@ -104,7 +104,9 @@ export function registerPrPreflightTool(server: FastMCP): void {
         });
 
         const pr = data.repository.pullRequest;
-        if (!pr) return jsonRespond({ error: "not_found", owner, repo, number: prNumber });
+        if (!pr) {
+          return errorRespond(mkError("NOT_FOUND", `PR ${owner}/${repo}#${prNumber} not found.`));
+        }
 
         // Behind-base count via REST compare
         let behindBy = 0;
@@ -259,9 +261,8 @@ export function registerPrPreflightTool(server: FastMCP): void {
         }
 
         return md;
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return jsonRespond({ error: "query_failed", message: msg, owner, repo, number: prNumber });
+      } catch (err) {
+        return errorRespond(classifyError(err));
       }
     },
   });
