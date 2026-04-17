@@ -1,8 +1,8 @@
 import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
-import { graphqlQuery } from "./github-client.js";
-import { errorRespond, jsonRespond } from "./json.js";
+import { classifyError, graphqlQuery } from "./github-client.js";
+import { errorRespond, jsonRespond, mkError } from "./json.js";
 import { FormatSchema } from "./schemas.js";
 
 // ---------------------------------------------------------------------------
@@ -120,22 +120,22 @@ export function registerModulePinHintTool(server: FastMCP): void {
       const ref = args.ref;
 
       if (language !== "go") {
-        return jsonRespond({
-          error: "unsupported_language",
-          language,
-          hint: "Only 'go' is supported in the current version.",
-        });
+        return errorRespond(
+          mkError("UNSUPPORTED_LANGUAGE", `Language '${language}' is not supported.`, {
+            suggestedFix: "Only 'go' is supported in the current version.",
+          }),
+        );
       }
 
       try {
         const commit = await resolveCommit(owner, repo, ref);
         if (!commit) {
-          return jsonRespond({
-            error: "not_found",
-            owner,
-            repo,
-            ref: ref ?? "(default branch)",
-          });
+          return errorRespond(
+            mkError(
+              "NOT_FOUND",
+              `Ref '${ref ?? "(default branch)"}' not found in ${owner}/${repo}.`,
+            ),
+          );
         }
 
         const goPseudoVersion = buildGoPseudoVersion(commit.committedDate, commit.oid);
@@ -171,9 +171,8 @@ export function registerModulePinHintTool(server: FastMCP): void {
         ];
 
         return lines.join("\n");
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return jsonRespond({ error: "query_failed", owner, repo, message: msg });
+      } catch (err) {
+        return errorRespond(classifyError(err));
       }
     },
   });
