@@ -1,8 +1,8 @@
 import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
-import { graphqlQuery } from "./github-client.js";
-import { errorRespond, jsonRespond } from "./json.js";
+import { classifyError, graphqlQuery } from "./github-client.js";
+import { errorRespond, jsonRespond, mkError } from "./json.js";
 import { FormatSchema } from "./schemas.js";
 
 // ---------------------------------------------------------------------------
@@ -171,13 +171,22 @@ export function registerOrgPulseTool(server: FastMCP): void {
       const auth = gateAuth();
       if (!auth.ok) return errorRespond(auth.envelope);
 
-      const data = await graphqlQuery<OrgPulseQueryResult>(ORG_PULSE_QUERY, {
-        org: args.org,
-        first: args.maxRepos,
-      });
+      let data: OrgPulseQueryResult;
+      try {
+        data = await graphqlQuery<OrgPulseQueryResult>(ORG_PULSE_QUERY, {
+          org: args.org,
+          first: args.maxRepos,
+        });
+      } catch (err) {
+        return errorRespond(classifyError(err));
+      }
 
       if (!data.organization) {
-        return jsonRespond({ error: "org_not_found", org: args.org });
+        return errorRespond(
+          mkError("NOT_FOUND", `Organization '${args.org}' not found or inaccessible.`, {
+            suggestedFix: "Verify the org login and that your token has access.",
+          }),
+        );
       }
 
       const allRepos = data.organization.repositories.nodes.filter(
