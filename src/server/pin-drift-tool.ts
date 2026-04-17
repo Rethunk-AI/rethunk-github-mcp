@@ -6,8 +6,8 @@ import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { countBehind, resolveRef } from "./compare-refs.js";
 import { gateAuth } from "./github-auth.js";
-import { graphqlQuery, parallelApi } from "./github-client.js";
-import { errorRespond, jsonRespond } from "./json.js";
+import { classifyError, graphqlQuery, parallelApi } from "./github-client.js";
+import { errorRespond, jsonRespond, type McpErrorEnvelope } from "./json.js";
 import { FormatSchema } from "./schemas.js";
 
 // ---------------------------------------------------------------------------
@@ -28,6 +28,8 @@ interface PinEntry {
   grepMatches?: number;
   commits: { sha7: string; message: string; author: string; date: string }[];
   stale: boolean;
+  /** Populated when the pin could not be resolved; `behindBy` is -1 in that case. */
+  error?: McpErrorEnvelope;
 }
 
 interface SkippedEntry {
@@ -396,6 +398,11 @@ export function registerPinDriftTool(server: FastMCP): void {
               behindBy: -1,
               commits: [],
               stale: false,
+              error: {
+                code: "NOT_FOUND",
+                message: `Upstream ${pin.owner}/${pin.repo} has no default branch or is inaccessible.`,
+                retryable: false,
+              },
             };
           }
 
@@ -453,7 +460,7 @@ export function registerPinDriftTool(server: FastMCP): void {
             })),
             stale: behindBy > 0,
           };
-        } catch {
+        } catch (err) {
           return {
             source: pin.source,
             owner: pin.owner,
@@ -464,6 +471,7 @@ export function registerPinDriftTool(server: FastMCP): void {
             behindBy: -1,
             commits: [],
             stale: false,
+            error: classifyError(err),
           };
         }
       });
