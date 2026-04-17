@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   asyncPool,
+  classifyError,
   parallelApi,
   parseGitHubRemoteUrl,
   resolveLocalRepoRemote,
@@ -119,5 +120,74 @@ describe("resolveLocalRepoRemote", () => {
 
   test("returns undefined for non-git path", () => {
     expect(resolveLocalRepoRemote("/tmp")).toBeUndefined();
+  });
+});
+
+describe("classifyError", () => {
+  test("maps 401 to AUTH_FAILED", () => {
+    const env = classifyError({ status: 401, message: "Bad credentials" });
+    expect(env.code).toBe("AUTH_FAILED");
+    expect(env.retryable).toBe(false);
+    expect(env.suggestedFix).toBeDefined();
+  });
+
+  test("maps 403 with ratelimit-remaining=0 to RATE_LIMITED (retryable)", () => {
+    const env = classifyError({
+      status: 403,
+      message: "API rate limit exceeded",
+      response: {
+        headers: {
+          "x-ratelimit-remaining": "0",
+          "x-ratelimit-reset": "1700000000",
+        },
+      },
+    });
+    expect(env.code).toBe("RATE_LIMITED");
+    expect(env.retryable).toBe(true);
+    expect(env.suggestedFix).toContain("Rate limit resets");
+  });
+
+  test("maps other 403 to PERMISSION_DENIED", () => {
+    const env = classifyError({ status: 403, message: "forbidden" });
+    expect(env.code).toBe("PERMISSION_DENIED");
+    expect(env.retryable).toBe(false);
+  });
+
+  test("maps 404 to NOT_FOUND", () => {
+    const env = classifyError({ status: 404, message: "Not Found" });
+    expect(env.code).toBe("NOT_FOUND");
+  });
+
+  test("maps 422 to VALIDATION", () => {
+    const env = classifyError({ status: 422, message: "Unprocessable" });
+    expect(env.code).toBe("VALIDATION");
+  });
+
+  test("maps 5xx to UPSTREAM_FAILURE (retryable)", () => {
+    const env = classifyError({ status: 502, message: "Bad Gateway" });
+    expect(env.code).toBe("UPSTREAM_FAILURE");
+    expect(env.retryable).toBe(true);
+  });
+
+  test("maps GraphQL error array to UPSTREAM_FAILURE", () => {
+    const env = classifyError({
+      message: "graphql failed",
+      errors: [{ message: "Field 'foo' doesn't exist" }],
+    });
+    expect(env.code).toBe("UPSTREAM_FAILURE");
+    expect(env.message).toBe("Field 'foo' doesn't exist");
+    expect(env.retryable).toBe(true);
+  });
+
+  test("falls through to INTERNAL for unrecognized shape", () => {
+    const env = classifyError(new Error("weird"));
+    expect(env.code).toBe("INTERNAL");
+    expect(env.message).toBe("weird");
+  });
+
+  test("handles non-Error values", () => {
+    const env = classifyError("stringified");
+    expect(env.code).toBe("INTERNAL");
+    expect(env.message).toBe("unknown");
   });
 });

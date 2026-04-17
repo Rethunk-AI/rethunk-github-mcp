@@ -3,6 +3,7 @@ import { graphql as octokitGraphql } from "@octokit/graphql";
 import { Octokit } from "@octokit/rest";
 
 import { gateAuth } from "./github-auth.js";
+import { type McpErrorEnvelope, mkError } from "./json.js";
 
 let cachedOctokit: Octokit | undefined;
 let cachedGraphql: typeof octokitGraphql | undefined;
@@ -75,6 +76,64 @@ export async function parallelApi<T, R>(
   fn: (item: T) => Promise<R>,
 ): Promise<R[]> {
   return asyncPool(items, GITHUB_API_PARALLELISM, fn);
+}
+
+/**
+ * Classify an arbitrary error (Octokit REST, GraphQL response error, or other)
+ * into a structured {@link McpErrorEnvelope}.
+ *
+ * HTTP status mapping:
+ * - 401 → AUTH_FAILED
+ * - 403 with `x-ratelimit-remaining: 0` → RATE_LIMITED (retryable)
+ * - other 403 → PERMISSION_DENIED
+ * - 404 → NOT_FOUND
+ * - 422 → VALIDATION
+ * - 5xx → UPSTREAM_FAILURE (retryable)
+ *
+ * GraphQL errors without an HTTP status map to UPSTREAM_FAILURE.
+ * Unrecognized errors fall through to INTERNAL.
+ */
+export function classifyError(err: unknown): McpErrorEnvelope {
+  const e = err as {
+    status?: number;
+    message?: string;
+    response?: { headers?: Record<string, string | undefined> };
+    errors?: { message?: string }[];
+  };
+  const message = typeof e?.message === "string" && e.message.length > 0 ? e.message : "unknown";
+  const status = typeof e?.status === "number" ? e.status : undefined;
+
+  if (status === 401) {
+    return mkError("AUTH_FAILED", message, {
+      suggestedFix: "Verify GITHUB_TOKEN/GH_TOKEN is valid and has required scopes.",
+    });
+  }
+  if (status === 403) {
+    const remaining = e.response?.headers?.["x-ratelimit-remaining"];
+    if (remaining === "0") {
+      const reset = e.response?.headers?.["x-ratelimit-reset"];
+      const suggestedFix = reset
+        ? `Rate limit resets at ${new Date(Number(reset) * 1000).toISOString()}.`
+        : "Wait for rate limit to reset.";
+      return mkError("RATE_LIMITED", message, { retryable: true, suggestedFix });
+    }
+    return mkError("PERMISSION_DENIED", message, {
+      suggestedFix: "Check token scopes or repo access.",
+    });
+  }
+  if (status === 404) return mkError("NOT_FOUND", message);
+  if (status === 422) return mkError("VALIDATION", message);
+  if (status !== undefined && status >= 500 && status < 600) {
+    return mkError("UPSTREAM_FAILURE", message, { retryable: true });
+  }
+
+  // GraphQL-level error (no HTTP status but has errors array)
+  if (Array.isArray(e?.errors) && e.errors.length > 0) {
+    const firstMessage = e.errors[0]?.message ?? message;
+    return mkError("UPSTREAM_FAILURE", firstMessage, { retryable: true });
+  }
+
+  return mkError("INTERNAL", message);
 }
 
 /** Parse a GitHub remote URL into owner/repo. Handles SSH and HTTPS forms. */
