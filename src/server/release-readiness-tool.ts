@@ -1,7 +1,7 @@
 import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
-import { getOctokit, graphqlQuery } from "./github-client.js";
+import { classifyError, getOctokit, graphqlQuery } from "./github-client.js";
 import { errorRespond, jsonRespond, truncateText } from "./json.js";
 import { FormatSchema, RepoRefSchema } from "./schemas.js";
 
@@ -221,14 +221,8 @@ export function registerReleaseReadinessTool(server: FastMCP): void {
         );
 
         return lines.join("\n");
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return jsonRespond({
-          error: "compare_failed",
-          base,
-          head: head ?? "default",
-          message: msg,
-        });
+      } catch (err) {
+        return errorRespond(classifyError(err));
       }
     },
   });
