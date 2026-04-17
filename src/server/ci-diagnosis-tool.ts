@@ -1,8 +1,8 @@
 import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
-import { getOctokit } from "./github-client.js";
-import { errorRespond, jsonRespond } from "./json.js";
+import { classifyError, getOctokit } from "./github-client.js";
+import { errorRespond, jsonRespond, mkError } from "./json.js";
 import { FormatSchema, RepoRefSchema } from "./schemas.js";
 
 interface FailedStep {
@@ -107,7 +107,14 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
           run = res.data.workflow_runs[0];
         }
 
-        if (!run) return jsonRespond({ error: "no_ci_runs", owner, repo });
+        if (!run) {
+          return errorRespond(
+            mkError("NO_CI_RUNS", `No workflow runs found for ${owner}/${repo}.`, {
+              suggestedFix:
+                "Verify the ref/PR has triggered a workflow, or pass an explicit runId.",
+            }),
+          );
+        }
 
         // --- Get jobs ---
         const jobsRes = await octokit.actions.listJobsForWorkflowRun({
@@ -182,9 +189,8 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
         }
 
         return lines.join("\n");
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return jsonRespond({ error: "ci_diagnosis_failed", owner, repo, message: msg });
+      } catch (err) {
+        return errorRespond(classifyError(err));
       }
     },
   });
