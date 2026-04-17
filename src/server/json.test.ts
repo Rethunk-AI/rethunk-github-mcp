@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  errorRespond,
   jsonRespond,
   MCP_JSON_FORMAT_VERSION,
+  mkError,
   readMcpServerVersion,
   readPackageVersion,
   spreadDefined,
@@ -113,5 +115,36 @@ describe("truncateText", () => {
   test("truncates and appends notice when over limit", () => {
     const result = truncateText("abcdef", 3);
     expect(result).toBe("abc\n... [truncated]");
+  });
+});
+
+describe("mkError", () => {
+  test("builds envelope with default retryable=false", () => {
+    const e = mkError("NOT_FOUND", "repo gone");
+    expect(e).toEqual({ code: "NOT_FOUND", message: "repo gone", retryable: false });
+  });
+
+  test("honors retryable=true", () => {
+    const e = mkError("RATE_LIMITED", "slow down", { retryable: true });
+    expect(e.retryable).toBe(true);
+  });
+
+  test("includes suggestedFix when provided", () => {
+    const e = mkError("AUTH_MISSING", "no token", {
+      suggestedFix: "Set GITHUB_TOKEN or run `gh auth login`.",
+    });
+    expect(e.suggestedFix).toBe("Set GITHUB_TOKEN or run `gh auth login`.");
+  });
+
+  test("omits suggestedFix when undefined", () => {
+    const e = mkError("NOT_FOUND", "gone");
+    expect("suggestedFix" in e).toBe(false);
+  });
+});
+
+describe("errorRespond", () => {
+  test("wraps envelope under top-level `error` key", () => {
+    const out = errorRespond(mkError("NOT_FOUND", "repo gone"));
+    expect(out).toBe('{"error":{"code":"NOT_FOUND","message":"repo gone","retryable":false}}');
   });
 });

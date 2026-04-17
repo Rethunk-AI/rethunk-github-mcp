@@ -29,6 +29,58 @@ export function jsonRespond(body: object): string {
   return JSON.stringify(body);
 }
 
+/**
+ * Structured error code set used across all MCP tools.
+ *
+ * - `AUTH_MISSING`/`AUTH_FAILED`: credential resolution problems.
+ * - `NOT_FOUND`/`PERMISSION_DENIED`/`RATE_LIMITED`/`VALIDATION`: direct HTTP-status maps.
+ * - `UPSTREAM_FAILURE`: 5xx, GraphQL errors, or generic GitHub-side failures.
+ * - Domain codes (`NO_CI_RUNS`, `COMPARE_FAILED`, `LOCAL_REPO_NO_REMOTE`,
+ *   `UNSUPPORTED_LANGUAGE`, `AMBIGUOUS_REPO`): per-tool signals that are not HTTP errors.
+ * - `INTERNAL`: catch-all for unexpected failures.
+ */
+export type McpErrorCode =
+  | "AUTH_MISSING"
+  | "AUTH_FAILED"
+  | "NOT_FOUND"
+  | "PERMISSION_DENIED"
+  | "RATE_LIMITED"
+  | "VALIDATION"
+  | "UPSTREAM_FAILURE"
+  | "NO_CI_RUNS"
+  | "COMPARE_FAILED"
+  | "LOCAL_REPO_NO_REMOTE"
+  | "UNSUPPORTED_LANGUAGE"
+  | "AMBIGUOUS_REPO"
+  | "INTERNAL";
+
+/** Structured error envelope. Returned in the `error` field of JSON responses. */
+export interface McpErrorEnvelope {
+  code: McpErrorCode;
+  message: string;
+  retryable: boolean;
+  suggestedFix?: string;
+}
+
+/** Construct an error envelope. `retryable` defaults to `false`. */
+export function mkError(
+  code: McpErrorCode,
+  message: string,
+  opts?: { retryable?: boolean; suggestedFix?: string },
+): McpErrorEnvelope {
+  return {
+    code,
+    message,
+    retryable: opts?.retryable ?? false,
+    ...spreadDefined("suggestedFix", opts?.suggestedFix),
+  };
+}
+
+/** Respond with a tool-level error envelope: `{"error": {...}}`. */
+export function errorRespond(envelope: McpErrorEnvelope): string {
+  return jsonRespond({ error: envelope });
+}
+
 /** Spread into an object literal only when `cond` is true; otherwise `{}`. */
 export function spreadWhen<T extends Record<string, unknown>>(
   cond: boolean,
