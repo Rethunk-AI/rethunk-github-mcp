@@ -14,8 +14,8 @@ import {
 } from "./json.js";
 
 describe("MCP_JSON_FORMAT_VERSION", () => {
-  test("is '1'", () => {
-    expect(MCP_JSON_FORMAT_VERSION).toBe("1");
+  test("is '2'", () => {
+    expect(MCP_JSON_FORMAT_VERSION).toBe("2");
   });
 });
 
