@@ -3,8 +3,13 @@ import { execFileSync } from "node:child_process";
 import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
-import { graphqlQuery, parallelApi, resolveLocalRepoRemote } from "./github-client.js";
-import { errorRespond, jsonRespond, truncateText } from "./json.js";
+import {
+  classifyError,
+  graphqlQuery,
+  parallelApi,
+  resolveLocalRepoRemote,
+} from "./github-client.js";
+import { errorRespond, jsonRespond, type McpErrorEnvelope, mkError, truncateText } from "./json.js";
 import { FormatSchema, LocalOrRemoteRepoSchema } from "./schemas.js";
 
 interface StatusCheckNode {
@@ -44,7 +49,7 @@ interface RepoResult {
   draftPRs?: number;
   openIssues?: number;
   local?: { branch: string; dirty: number; ahead: number; behind: number };
-  error?: string;
+  error?: McpErrorEnvelope;
 }
 
 function timeAgo(dateStr: string): string {
@@ -144,7 +149,15 @@ export function registerRepoStatusTool(server: FastMCP): void {
         if ("localPath" in repoRef) {
           const resolved = resolveLocalRepoRemote(repoRef.localPath);
           if (!resolved) {
-            return { owner: "unknown", repo: repoRef.localPath, error: "local_repo_no_remote" };
+            return {
+              owner: "unknown",
+              repo: repoRef.localPath,
+              error: mkError(
+                "LOCAL_REPO_NO_REMOTE",
+                `No GitHub origin found for local path ${repoRef.localPath}`,
+                { suggestedFix: "Ensure the path is a git clone with a GitHub `origin` remote." },
+              ),
+            };
           }
           owner = resolved.owner;
           repo = resolved.repo;
@@ -197,8 +210,8 @@ export function registerRepoStatusTool(server: FastMCP): void {
           if (localState) result.local = localState;
 
           return result;
-        } catch {
-          return { owner, repo, error: "not_found" };
+        } catch (err) {
+          return { owner, repo, error: classifyError(err) };
         }
       });
 
@@ -206,7 +219,8 @@ export function registerRepoStatusTool(server: FastMCP): void {
 
       const md = results
         .map((r) => {
-          if (r.error) return `## ${r.owner}/${r.repo}\nError: ${r.error}`;
+          if (r.error)
+            return `## ${r.owner}/${r.repo}\nError (${r.error.code}): ${r.error.message}`;
           const lines: string[] = [];
           lines.push(`## ${r.owner}/${r.repo} (${r.defaultBranch ?? "?"})`);
           if (r.latestCommit) {

@@ -63,20 +63,23 @@ describe("timeAgo", () => {
 // ---------------------------------------------------------------------------
 
 describe("repo_status tool (captureTool)", () => {
-  test("local_repo_no_remote: JSON format", async () => {
+  test("LOCAL_REPO_NO_REMOTE: JSON format", async () => {
     const run = captureTool(registerRepoStatusTool);
     const text = await run({ repos: [{ localPath: "/tmp" }], format: "json" });
-    const parsed = JSON.parse(text) as { repos?: Array<{ error: string }> };
+    const parsed = JSON.parse(text) as {
+      repos?: Array<{ error?: { code: string; retryable: boolean } }>;
+    };
     // If auth unavailable, repos key is absent — skip assertion gracefully
     if (!parsed.repos) return;
-    expect(parsed.repos[0]?.error).toBe("local_repo_no_remote");
+    expect(parsed.repos[0]?.error?.code).toBe("LOCAL_REPO_NO_REMOTE");
+    expect(parsed.repos[0]?.error?.retryable).toBe(false);
   });
 
-  test("local_repo_no_remote: markdown format", async () => {
+  test("LOCAL_REPO_NO_REMOTE: markdown format", async () => {
     const run = captureTool(registerRepoStatusTool);
     const text = await run({ repos: [{ localPath: "/tmp" }] });
     // Auth error returns JSON; markdown path contains the error code
     if (text.startsWith("{")) return;
-    expect(text).toContain("local_repo_no_remote");
+    expect(text).toContain("LOCAL_REPO_NO_REMOTE");
   });
 });
