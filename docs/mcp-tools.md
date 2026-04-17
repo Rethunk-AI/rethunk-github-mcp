@@ -25,22 +25,50 @@ All tools are **read-only** (`readOnlyHint: true`). Pass **`format: "json"`** fo
 
 ## JSON responses
 
-Payloads are minified (`JSON.stringify`, no pretty-print). `MCP_JSON_FORMAT_VERSION` is **`"1"`**. Optional fields are omitted when empty/null.
+Payloads are minified (`JSON.stringify`, no pretty-print). `MCP_JSON_FORMAT_VERSION` is **`"2"`**. Optional fields are omitted when empty/null.
+
+### Error envelope
+
+Tool-level failures return a top-level `error` object:
+
+```jsonc
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "PR Rethunk-AI/github-mcp#42 not found.",
+    "retryable": false,
+    "suggestedFix": "Verify the PR number."  // optional
+  }
+}
+```
+
+Per-item failures (inside arrays like `repos[]` or `pins[]`) follow the same envelope shape in the item's `error` field. The batch does not fail as a whole when a per-item failure occurs.
+
+Agents can decide programmatically whether to retry (e.g. exponential backoff on `retryable: true`) vs. surface the problem to the user (`retryable: false`).
 
 ### Error codes
 
-| Code | Meaning |
-|------|---------|
-| `github_auth_missing` | No `GITHUB_TOKEN`/`GH_TOKEN` and `gh auth token` failed. |
-| `not_found` | Repository, PR, or workflow run does not exist. |
-| `no_ci_runs` | No workflow runs found for the given ref/PR. |
-| `org_not_found` | GitHub organization does not exist or is inaccessible. |
-| `local_repo_no_remote` | Local path has no resolvable GitHub `origin` remote. |
-| `graphql_error` | Upstream GitHub GraphQL error (message included). |
-| `compare_failed` | `base...head` comparison failed (bad ref, etc.). |
-| `query_failed` | General API failure (message included). |
-| `ci_diagnosis_failed` | Failed to resolve or diagnose the CI run. |
-| `unsupported_language` | `module_pin_hint` was called with a `language` other than `"go"`. |
+| Code | Meaning | Retryable |
+|------|---------|-----------|
+| `AUTH_MISSING` | No `GITHUB_TOKEN`/`GH_TOKEN` and `gh auth token` failed. | no |
+| `AUTH_FAILED` | GitHub rejected the token (HTTP 401). | no |
+| `NOT_FOUND` | Repository, PR, org, ref, or workflow run does not exist (HTTP 404). | no |
+| `PERMISSION_DENIED` | Token lacks scopes or repo access (HTTP 403, not rate limit). | no |
+| `RATE_LIMITED` | GitHub rate limit exhausted (HTTP 403 + `x-ratelimit-remaining: 0`). `suggestedFix` includes the reset time. | **yes** |
+| `VALIDATION` | Request failed GitHub's input validation (HTTP 422). | no |
+| `UPSTREAM_FAILURE` | GitHub 5xx or GraphQL-level error. | **yes** |
+| `NO_CI_RUNS` | No workflow runs found for the given ref/PR (`ci_diagnosis`). | no |
+| `COMPARE_FAILED` | Reserved: `base...head` comparison failure distinct from a 404. | no |
+| `LOCAL_REPO_NO_REMOTE` | Local path has no resolvable GitHub `origin` remote. | no |
+| `UNSUPPORTED_LANGUAGE` | `module_pin_hint` was called with a `language` other than `"go"`. | no |
+| `AMBIGUOUS_REPO` | Reserved: pin source does not encode which GitHub repo a value belongs to. | no |
+| `INTERNAL` | Unrecognized/unexpected failure. | no |
+
+### Idempotency
+
+All current tools are **read-only** (`readOnlyHint: true`) and therefore idempotent: calling any tool twice with the same arguments is equivalent to calling it once. There is no server-side state mutation. Safe to retry transparently on `RATE_LIMITED` or `UPSTREAM_FAILURE`.
+
+Future write-capable tools (e.g. a proposed `release_create`) will document their idempotency semantics explicitly in this section.
 
 ---
 
@@ -69,7 +97,8 @@ Payloads are minified (`JSON.stringify`, no pretty-print). `MCP_JSON_FORMAT_VERS
     "draftPRs": 1,
     "openIssues": 12,
     "local": { "branch": "feature", "dirty": 2, "ahead": 1, "behind": 0 }
-    // "error": "not_found" — on per-repo failure (does not fail the batch)
+    // "error": { "code": "NOT_FOUND", "message": "...", "retryable": false }
+    //   — on per-repo failure (does not fail the batch)
   }]
 }
 ```
@@ -302,7 +331,9 @@ The `attention` array is sorted by urgency: failing CI repos first, then by stal
 - `scripts/versions.env`: shell `KEY=VALUE` lines whose key ends in `_REF`, `_SHA`, or `_VERSION` and whose value is a 40-char hex SHA. These are always reported under `skipped` with `reason: "ambiguous_repo"` because the file does not encode which GitHub repo each key belongs to.
 - `package.json`: `dependencies`/`devDependencies` whose version is a GitHub shorthand (`owner/repo#ref`) or HTTPS GitHub URL.
 
-`behindBy: -1` signals an error resolving that pin (e.g. upstream repo not found).
+`behindBy: -1` signals an error resolving that pin. When this happens the pin entry also carries an `error: { code, message, retryable, suggestedFix? }` field explaining why (e.g. `NOT_FOUND`, `RATE_LIMITED`, `UPSTREAM_FAILURE`).
+
+`skipped[].reason` remains a free-text parser-level code (`ambiguous_repo`, `ambiguous_ref`, `not_github`, `ls_tree_no_sha`, `ls_tree_failed`) — it describes a pin that couldn't be parsed at all, not a GitHub-side error.
 
 ---
 
@@ -326,7 +357,12 @@ The `attention` array is sorted by urgency: failing CI repos first, then by stal
   "since": "2026-04-10T17:19:40Z",
   "repos": [
     { "owner": "Rethunk-Tech", "repo": "bastion-satcom", "commitCount": 12 },
-    { "owner": "Rethunk-AI", "repo": "some-lib", "commitCount": 0, "error": "not_found" }
+    {
+      "owner": "Rethunk-AI",
+      "repo": "some-lib",
+      "commitCount": 0,
+      "error": { "code": "NOT_FOUND", "message": "...", "retryable": false }
+    }
   ],
   "commits": [{
     "owner": "Rethunk-Tech",
