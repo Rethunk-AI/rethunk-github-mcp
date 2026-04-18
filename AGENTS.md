@@ -51,7 +51,3 @@ Optional [`.githooks/`](.githooks): `bun run setup-hooks` once per clone. pre-co
 ## Repo MCP entry (contributors)
 
 Dogfood from clone: [docs/install.md](docs/install.md) — *From source*.
-
-## Commits
-
-Conventional Commits. Small themed commits. Why-focused messages. Stage + commit one invocation per batch.
