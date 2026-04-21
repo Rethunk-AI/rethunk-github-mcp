@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] — 2026-04-21
+
+### Fixed
+
+- **`fetchLatestSemverTag`** — `getOctokit()` was called outside the `try/catch` block, so an `AUTH_MISSING` throw propagated as a test failure in environments where the Actions token has limited scope, rather than the function returning `undefined` as intended and documented by the test's own guard comment.
+
+### CI
+
+- Coverage gate added: `bun run test:coverage` enforces an 80% line-coverage minimum. `GITHUB_TOKEN` is now explicitly forwarded to the test step.
+
+### Documentation
+
+- **`CONTRIBUTING.md`** — new file; consolidates dev setup, hook table, commit conventions, CI description, PR checklist, and how-to-add-a-tool guidance.
+- **`HUMANS.md`** — Development section replaced with a pointer to `CONTRIBUTING.md`; auth, install reference, and publishing steps remain.
+- **`AGENTS.md`** — corrected pre-commit hook description (`check` → `check + test`) and updated canonical-docs link for dev/CI content.
+
 ## [1.0.1] — 2026-04-21
 
 ### Docs
