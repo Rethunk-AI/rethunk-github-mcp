@@ -7,9 +7,15 @@ import {
   parallelApi,
   resolveLocalRepoRemote,
 } from "./github-client.js";
-import { errorRespond, jsonRespond, type McpErrorEnvelope, mkError, truncateText } from "./json.js";
+import {
+  errorRespond,
+  jsonRespond,
+  type McpErrorEnvelope,
+  mkLocalRepoNoRemote,
+  truncateText,
+} from "./json.js";
 import { FormatSchema, LocalOrRemoteRepoSchema } from "./schemas.js";
-import { extractFirstPR } from "./utils.js";
+import { extractFirstPR, parseSince } from "./utils.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -56,26 +62,6 @@ interface RepoCommitResult {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Parse a relative duration like "48h" or "7d" into an ISO8601 timestamp. */
-function parseSince(since: string): string {
-  // Already ISO8601
-  if (/^\d{4}-\d{2}-\d{2}T/.test(since) || /^\d{4}-\d{2}-\d{2}$/.test(since)) {
-    return since;
-  }
-  const hoursMatch = /^(\d+(?:\.\d+)?)h$/i.exec(since);
-  if (hoursMatch?.[1]) {
-    const ms = Number.parseFloat(hoursMatch[1]) * 3_600_000;
-    return new Date(Date.now() - ms).toISOString();
-  }
-  const daysMatch = /^(\d+(?:\.\d+)?)d$/i.exec(since);
-  if (daysMatch?.[1]) {
-    const ms = Number.parseFloat(daysMatch[1]) * 86_400_000;
-    return new Date(Date.now() - ms).toISOString();
-  }
-  // Fall through: return as-is and let GitHub reject it
-  return since;
-}
 
 async function fetchRepoCommits(
   owner: string,
@@ -196,11 +182,7 @@ export function registerEcosystemActivityTool(server: FastMCP): void {
               owner: "unknown",
               repo: repoRef.localPath,
               commitCount: 0,
-              error: mkError(
-                "LOCAL_REPO_NO_REMOTE",
-                `No GitHub origin found for local path ${repoRef.localPath}`,
-                { suggestedFix: "Ensure the path is a git clone with a GitHub `origin` remote." },
-              ),
+              error: mkLocalRepoNoRemote(repoRef.localPath),
               commits: [],
             } as RepoCommitResult;
           }
