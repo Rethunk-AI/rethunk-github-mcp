@@ -92,24 +92,17 @@ export function registerModulePinHintTool(server: FastMCP): void {
   server.addTool({
     name: "module_pin_hint",
     description:
-      "Given a (repo, ref) pair, return the correctly-formatted Go module pseudo-version " +
-      "string (v0.0.0-YYYYMMDDHHMMSS-<sha12>) in UTC. Useful when pinning a module via a " +
-      "git SHA in go.mod. One GraphQL call per invocation.",
+      "Returns the correctly-formatted Go module pseudo-version (v0.0.0-YYYYMMDDHHMMSS-sha12) for a given repo+ref. Useful for `go.mod` SHA pins.",
     annotations: { readOnlyHint: true },
     parameters: z.object({
       owner: z.string().describe("GitHub owner or organization."),
       repo: z.string().describe("GitHub repository name."),
-      ref: z
-        .string()
-        .optional()
-        .describe(
-          "Branch, tag, or SHA to resolve. Defaults to the repository default branch HEAD.",
-        ),
+      ref: z.string().optional().describe("Branch, tag, or SHA; defaults to default branch HEAD."),
       language: z
         .string()
         .optional()
         .default("go")
-        .describe("Module system. Only 'go' is supported in MVP."),
+        .describe("Module system (only 'go' supported)."),
       format: FormatSchema,
     }),
     execute: async (args) => {
