@@ -25,7 +25,7 @@ This package is an MCP **stdio** server. The client starts the process and commu
 
 ## GitHub Packages
 
-Every **version tag** on this repo is published to the **GitHub npm registry** as **`@rethunk-ai/github-mcp`** (scope matches the GitHub org). The **npmjs** package name **`@rethunk/github-mcp`** is updated **manually** by maintainers and may lag; prefer GitHub Packages for CI-aligned installs.
+Every **version tag** on this repo is published to the **GitHub npm registry** as **`@rethunk-ai/github-mcp`** (scope matches the GitHub org). The **npmjs** package **`@rethunk/github-mcp`** is also maintained and is current as of **v1.0.0**.
 
 1. Create a [GitHub personal access token](https://github.com/settings/tokens) with at least **`read:packages`**.
 2. In **`~/.npmrc`** or the project **`.npmrc`** (do not commit secrets):

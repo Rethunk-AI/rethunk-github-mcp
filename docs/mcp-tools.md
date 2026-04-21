@@ -12,16 +12,17 @@ MCP clients expose tools as `{serverName}_{toolName}`. With the server registere
 | Short id | Client id (server `rethunk-github`) | Purpose |
 |----------|--------------------------------------|---------|
 | `repo_status` | `rethunk-github_repo_status` | Multi-repo dashboard: default branch HEAD, CI, open PRs/issues, latest commit. Up to 20 repos per call, optional local git state. |
-| `my_work` | `rethunk-github_my_work` | Cross-repo personal queue: authored PRs, review requests, assigned issues. Single GraphQL query. |
-| `pr_preflight` | `rethunk-github_pr_preflight` | Pre-merge safety check: mergeable, reviews, CI, behind-base, computed `safe` verdict with reasons. |
-| `release_readiness` | `rethunk-github_release_readiness` | What would ship if we release now? Unreleased commits, associated PRs, CI on head, diff stats. |
+| `my_work` | `rethunk-github_my_work` | Cross-repo personal queue: authored PRs, review requests, assigned issues. `blockedOnMe` lens for action items. |
+| `pr_preflight` | `rethunk-github_pr_preflight` | Pre-merge safety check: mergeable, reviews, CI, behind-base, computed `safe` verdict with reasons. Batch-capable via `numbers[]`. |
+| `release_readiness` | `rethunk-github_release_readiness` | What would ship if we release now? Unreleased commits, associated PRs, CI on head, diff stats. Auto-picks latest semver tag as base. |
 | `ci_diagnosis` | `rethunk-github_ci_diagnosis` | Why is CI red? Resolves failed run, extracts failed job logs (tail-truncated), trigger commit. |
 | `org_pulse` | `rethunk-github_org_pulse` | Org-wide activity dashboard: failing CI, stale PRs, unreviewed PRs across all recently-active repos. |
-| `pin_drift` | `rethunk-github_pin_drift` | Audit upstream dependency pins in a local repo: how far is each go.mod/submodule/versions.env/package.json pin behind the upstream default branch? |
+| `pin_drift` | `rethunk-github_pin_drift` | Audit upstream dependency pins in a local repo: how far is each go.mod/submodule/versions.env/package.json pin behind the upstream default branch? Accepts glob patterns for `pinFiles`. |
 | `ecosystem_activity` | `rethunk-github_ecosystem_activity` | Merged chronological commit feed across multiple repos since a given timestamp or relative duration (e.g. `48h`). |
 | `module_pin_hint` | `rethunk-github_module_pin_hint` | Return the Go pseudo-version string (`v0.0.0-YYYYMMDDHHMMSS-sha12`) for any repo ref. |
+| `changelog_draft` | `rethunk-github_changelog_draft` | Draft a CHANGELOG.md section for unreleased commits, grouped by PR label. Auto-picks latest semver tag as base. |
 
-All tools are **read-only** (`readOnlyHint: true`). Pass **`format: "json"`** for structured JSON instead of markdown (default).
+All tools are **read-only** (`readOnlyHint: true`). Default output is **JSON** (`format: "json"`); pass `format: "markdown"` for human-readable output.
 
 ## JSON responses
 
@@ -81,7 +82,7 @@ Future write-capable tools (e.g. a proposed `release_create`) will document thei
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
 | `repos` | `(RepoRef \| LocalPath)[]` | yes | — | 1–20 repos. Each is `{ owner, repo }` or `{ localPath }`. |
-| `format` | `"markdown" \| "json"` | no | `"markdown"` | Output format. |
+| `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
 **JSON output:**
 
@@ -115,7 +116,8 @@ When `localPath` is given, the tool resolves the GitHub remote from `git remote 
 |------|------|----------|---------|-------------|
 | `username` | `string` | no | authenticated user | GitHub username to query. |
 | `maxResults` | `int` | no | `30` | 1–100 results per section. |
-| `format` | `"markdown" \| "json"` | no | `"markdown"` | Output format. |
+| `blockedOnMe` | `boolean` | no | `false` | When true, filters to items needing your immediate action: authored PRs with CI failure or changes requested, plus all pending review requests. |
+| `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
 **JSON output:**
 
@@ -136,10 +138,17 @@ When `localPath` is given, the tool resolves the GitHub remote from `git remote 
 
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `owner` | `string` | yes | — | GitHub owner/org. |
-| `repo` | `string` | yes | — | Repository name. |
-| `number` | `int` | yes | — | PR number. |
-| `format` | `"markdown" \| "json"` | no | `"markdown"` | Output format. |
+| `owner` | `string` | no | — | GitHub owner/org. Not required when `localPath` is set. |
+| `repo` | `string` | no | — | Repository name. Not required when `localPath` is set. |
+| `localPath` | `string` | no | — | Local clone path; auto-detects owner/repo from `git remote get-url origin`. |
+| `number` | `int` | no | — | Single PR number. |
+| `numbers` | `int[]` | no | — | Batch of PR numbers to check in one call (alternative to `number`). |
+| `ref` | `string` | no | — | PR number, GitHub PR URL, or `owner/repo#N` slug (alternative to `number`). |
+| `includeLogs` | `boolean` | no | `false` | When true, also fetches truncated CI logs for failing jobs — combining preflight + diagnosis in one call. |
+| `maxLogLines` | `int` | no | `50` | 10–500 log lines per failing job when `includeLogs` is true. |
+| `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
+
+`owner`/`repo` are required unless `localPath` is provided. Exactly one of `number`, `numbers`, or `ref` must be given; `numbers` accepts 1–20 entries and is processed with concurrency 4.
 
 **JSON output:**
 
@@ -177,10 +186,10 @@ The `safe` boolean is computed from: PR must be open, not a draft, no conflicts,
 |------|------|----------|---------|-------------|
 | `owner` | `string` | yes | — | GitHub owner/org. |
 | `repo` | `string` | yes | — | Repository name. |
-| `base` | `string` | yes | — | Base ref to compare from (e.g. `v1.2.0`). |
+| `base` | `string` | no | latest semver tag | Base ref to compare from (e.g. `v1.2.0`). Omit to auto-pick the latest semver tag. |
 | `head` | `string` | no | default branch | Head ref to compare to. |
 | `maxCommits` | `int` | no | `50` | 1–200 commits. |
-| `format` | `"markdown" \| "json"` | no | `"markdown"` | Output format. |
+| `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
 **JSON output:**
 
@@ -216,8 +225,9 @@ PR associations are extracted from commit message `(#123)` patterns, then resolv
 | `ref` | `string` | no | — | Branch or SHA. Finds latest run for this ref. |
 | `prNumber` | `int` | no | — | PR number. Alternative to `ref`. |
 | `runId` | `int` | no | — | Specific run ID. Highest priority. |
-| `maxLogLines` | `int` | no | `150` | 10–500 lines of log output per job. |
-| `format` | `"markdown" \| "json"` | no | `"markdown"` | Output format. |
+| `maxLogLines` | `int` | no | `50` | 10–500 lines of log output per job. |
+| `grepLog` | `string` | no | — | Regex applied to each log; only matching lines are returned. |
+| `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
 **Run resolution priority:** `runId` > `prNumber` > `ref` > latest failed run on default branch.
 
@@ -253,7 +263,7 @@ Logs are **tail-truncated** (last N lines kept) since failure output is at the b
 | `maxRepos` | `int` | no | `30` | 1–100 repos (ordered by most recently pushed). |
 | `staleDays` | `int` | no | `7` | Days without activity before a PR is stale. |
 | `includeArchived` | `boolean` | no | `false` | Include archived repositories. |
-| `format` | `"markdown" \| "json"` | no | `"markdown"` | Output format. |
+| `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
 **JSON output:**
 
@@ -291,10 +301,10 @@ The `attention` array is sorted by urgency: failing CI repos first, then by stal
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
 | `localPath` | `string` | yes | — | Absolute path to the local repo whose dependency pins to audit. |
-| `pinFiles` | `string[]` | no | auto-detect | Files to parse. Auto-detection tries: `go.mod`, `.gitmodules`, `scripts/versions.env`, `package.json`. |
+| `pinFiles` | `string[]` | no | auto-detect | Files to parse. Accepts glob patterns (e.g. `**/go.mod`). Auto-detection tries: `go.mod`, `.gitmodules`, `scripts/versions.env`, `package.json`. |
 | `ownerAllowlist` | `string[]` | no | — | Only audit pins whose GitHub owner matches one of these values (case-insensitive). Useful to skip third-party upstreams. |
 | `grep` | `string` | no | — | Regex filter: only commits whose message matches are counted in `grepMatches`. All commits still count toward `behindBy`. |
-| `format` | `"markdown" \| "json"` | no | `"markdown"` | Output format. |
+| `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
 **JSON output:**
 
@@ -348,7 +358,7 @@ The `attention` array is sorted by urgency: failing CI repos first, then by stal
 | `paths` | `string[]` | no | — | Filter to commits touching these paths (applied per repo via GraphQL `history(path:...)`). Multiple paths are OR'd together. |
 | `grep` | `string` | no | — | Regex filter applied client-side to commit message subjects. |
 | `maxCommitsPerRepo` | `int` | no | `50` | 1–200 commits fetched per repo before merge. |
-| `format` | `"markdown" \| "json"` | no | `"markdown"` | Output format. |
+| `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
 **JSON output:**
 
@@ -394,7 +404,7 @@ Commits are merged across repos and sorted newest-first. Per-repo errors do not 
 | `repo` | `string` | yes | — | GitHub repository name. |
 | `ref` | `string` | no | default branch HEAD | Branch, tag, or SHA to resolve. |
 | `language` | `string` | no | `"go"` | Module system. Only `"go"` is supported in MVP. |
-| `format` | `"markdown" \| "json"` | no | `"markdown"` | Output format. |
+| `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
 **JSON output:**
 
@@ -410,6 +420,42 @@ Commits are merged across repos and sorted newest-first. Per-repo errors do not 
 ```
 
 The pseudo-version is formatted as `v0.0.0-YYYYMMDDHHMMSS-<first12SHAchars>` using the committer date in UTC. Use this when pinning a module in `go.mod` via a SHA rather than a release tag.
+
+---
+
+### `changelog_draft`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `owner` | `string` | yes | — | GitHub owner/org. |
+| `repo` | `string` | yes | — | Repository name. |
+| `base` | `string` | no | latest semver tag | Base ref (tag/branch). Omit to auto-pick the latest semver tag. |
+| `head` | `string` | no | default branch | Head ref to compare to. |
+| `version` | `string` | no | `"Unreleased"` | Version string for the section header (e.g. `"v1.3.0"`). |
+| `maxCommits` | `int` | no | `50` | 1–200 commits. |
+| `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
+
+**JSON output:**
+
+```jsonc
+{
+  "version": "v1.3.0",
+  "date": "2026-04-21",
+  "base": "v1.2.0",
+  "head": "main",
+  "entries": [{
+    "sha7": "abc1234",
+    "message": "feat: add blockedOnMe lens to my_work",
+    "author": "alice",
+    "date": "2026-04-20T10:00:00Z",
+    "pr": { "number": 42, "title": "feat: add blockedOnMe lens", "labels": ["enhancement"] }
+  }]
+}
+```
+
+Commits are compared as `base...head`. PR metadata (title, labels) is resolved via GraphQL for up to 20 PRs. Markdown output is Keep-a-Changelog style, ready to paste into `CHANGELOG.md`.
 
 ---
 
