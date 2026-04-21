@@ -32,20 +32,7 @@ Set the token in your MCP client's `env` block — see [docs/install.md](docs/in
 
 ## Development
 
-Requires **Bun >= 1.3.11** to build this repository (`packageManager` in `package.json`). **Published runtime** (Node/Bun and how to launch the server): **[docs/install.md](docs/install.md)** — *Prerequisites*.
-
-```bash
-bun install
-bun run build      # rimraf dist + tsc → dist/
-bun run check      # Biome
-bun run check:fix  # Biome --write
-bun run test       # bun test src/
-bun run setup-hooks   # once per clone: use .githooks (pre-commit: check; pre-push: CI parity)
-```
-
-**Git hooks:** after `setup-hooks`, **pre-commit** runs `bun run check`; **pre-push** runs `bun install --frozen-lockfile`, `bun run build`, `bun run check`, and `bun run test` (same order as CI). Set **`SKIP_GIT_HOOKS=1`** to bypass.
-
-**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on pull requests and pushes to `main`: **`actions/setup-node` with Node 24** (minimum 22 asserted), then `bun install --frozen-lockfile`, `bun run build`, `bun run check`, `bun run test`. Follow-up **`prerelease-pack`** job runs `npm pack` and uploads a prerelease `.tgz` artifact (retention 90 days).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, build commands, git hooks, commit conventions, CI, and how to add a tool.
 
 ## Publishing
 
