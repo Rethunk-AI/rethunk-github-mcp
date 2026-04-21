@@ -2,8 +2,9 @@ import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
 import { classifyError, getOctokit, graphqlQuery } from "./github-client.js";
-import { errorRespond, jsonRespond, truncateText } from "./json.js";
+import { errorRespond, jsonRespond, mkError, truncateText } from "./json.js";
 import { FormatSchema, RepoRefSchema } from "./schemas.js";
+import { extractPRNumbers } from "./utils.js";
 
 interface PRNode {
   number: number;
@@ -25,17 +26,6 @@ interface CommitForRelease {
   author: string;
   date: string;
   pr?: { number: number; title: string; labels: string[] };
-}
-
-function extractPRNumbers(message: string): number[] {
-  const result: number[] = [];
-  for (const m of message.matchAll(/\(#(\d+)\)/g)) {
-    const raw = m[1];
-    if (!raw) continue;
-    const n = Number.parseInt(raw, 10);
-    if (!Number.isNaN(n)) result.push(n);
-  }
-  return result;
 }
 
 async function fetchPRMetadata(
@@ -114,13 +104,11 @@ export function registerReleaseReadinessTool(server: FastMCP): void {
   server.addTool({
     name: "release_readiness",
     description:
-      "What would ship if we release now? Compares a base ref (tag/branch) to head, " +
-      "showing unreleased commits with their associated PRs, CI status on head, and " +
-      "summary stats.",
+      "Unreleased-commit scope report: compares base..head, lists commits with PRs, CI status on head, and diff stats.",
     annotations: { readOnlyHint: true },
     parameters: RepoRefSchema.extend({
-      base: z.string().describe("Base ref to compare from (e.g. 'v1.2.0' or 'release/1.2')."),
-      head: z.string().optional().describe("Head ref. Defaults to the repo's default branch."),
+      base: z.string().describe("Base ref (tag/branch, e.g. 'v1.2.0')."),
+      head: z.string().optional().describe("Head ref; defaults to default branch."),
       maxCommits: z.number().int().min(1).max(200).optional().default(50),
       format: FormatSchema,
     }),
@@ -129,13 +117,29 @@ export function registerReleaseReadinessTool(server: FastMCP): void {
       if (!auth.ok) return errorRespond(auth.envelope);
 
       const octokit = getOctokit();
-      const { owner, repo, base, maxCommits } = args;
+      const { owner, repo, maxCommits } = args;
       let head = args.head;
+      let base = args.base;
 
       try {
         if (!head) {
           const repoData = await octokit.repos.get({ owner, repo });
           head = repoData.data.default_branch;
+        }
+
+        if (!base) {
+          base = await fetchLatestSemverTag(owner, repo);
+          if (!base) {
+            return errorRespond(
+              mkError(
+                "NOT_FOUND",
+                `No semver tag found in ${owner}/${repo}; pass base explicitly.`,
+                {
+                  suggestedFix: "Create a tag (e.g. v0.1.0) or pass base explicitly.",
+                },
+              ),
+            );
+          }
         }
 
         const cmp = await octokit.repos.compareCommitsWithBasehead({
@@ -147,7 +151,6 @@ export function registerReleaseReadinessTool(server: FastMCP): void {
         const aheadBy = cmp.data.ahead_by;
         const rawCommits = cmp.data.commits.slice(0, maxCommits);
 
-        // Extract PR numbers from commit messages
         const allPRNumbers = new Set<number>();
         for (const c of rawCommits) {
           for (const n of extractPRNumbers(c.commit.message)) allPRNumbers.add(n);
@@ -186,37 +189,34 @@ export function registerReleaseReadinessTool(server: FastMCP): void {
 
         if (args.format === "json") return jsonRespond(result);
 
-        // Markdown
+        // Markdown — compact single-line list instead of full table
         const lines: string[] = [
           `# Release Readiness: ${owner}/${repo}`,
           "",
-          `**Comparing:** ${base} → ${head} (${aheadBy} commits ahead)`,
+          `${base} → ${head} (${aheadBy} commits ahead)`,
         ];
 
-        const ciIcon =
+        const ciState =
           ciStatus.status === "success"
-            ? "✓ passing"
+            ? "CI: passing"
             : ciStatus.status === "not_configured"
-              ? "⊘ not configured"
-              : "✗ failing";
-        const failedNames = ciStatus.failedChecks.map((c) => c.name).join(", ");
-        lines.push(`**CI on head:** ${ciIcon}${failedNames ? `: ${failedNames}` : ""}`);
-        lines.push("", "## Unreleased Commits");
+              ? "CI: not configured"
+              : `CI: failing (${ciStatus.failedChecks.map((c) => c.name).join(", ")})`;
+        lines.push(ciState, "");
 
         if (commits.length === 0) {
           lines.push("*(no commits)*");
         } else {
-          lines.push("| SHA | Message | Author | PR |", "|-----|---------|--------|----|");
+          lines.push("## Unreleased Commits");
           for (const c of commits) {
             const msg = truncateText(c.message, 72);
-            const pr = c.pr ? `#${c.pr.number} (${c.pr.labels.join(", ")})` : "—";
-            lines.push(`| \`${c.sha7}\` | ${msg} | ${c.author} | ${pr} |`);
+            const pr = c.pr ? ` [#${c.pr.number}]` : "";
+            lines.push(`- \`${c.sha7}\` ${msg}${pr} — ${c.author}`);
           }
         }
 
         lines.push(
           "",
-          "## Stats",
           `+${stats.additions} −${stats.deletions} across ${stats.changedFiles} files`,
         );
 
