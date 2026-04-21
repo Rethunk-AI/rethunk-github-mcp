@@ -4,6 +4,7 @@ import { gateAuth } from "./github-auth.js";
 import { classifyError, graphqlQuery } from "./github-client.js";
 import { errorRespond, jsonRespond, truncateText } from "./json.js";
 import { FormatSchema } from "./schemas.js";
+import { timeAgo } from "./utils.js";
 
 interface GraphQLPullRequest {
   __typename: "PullRequest";
@@ -34,22 +35,11 @@ interface SearchResponse {
   assignedIssues: { nodes: SearchNode[] };
 }
 
-function relativeTime(iso: string): string {
-  const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (sec < 60) return "now";
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
-  if (sec < 604800) return `${Math.floor(sec / 86400)}d ago`;
-  return `${Math.floor(sec / 604800)}w ago`;
-}
-
 export function registerMyWorkTool(server: FastMCP): void {
   server.addTool({
     name: "my_work",
     description:
-      "Cross-repo personal work queue: your open PRs (with CI + review state), " +
-      "PRs awaiting your review, and assigned issues. One call replaces browsing " +
-      "GitHub notifications.",
+      "Personal work queue: your open PRs (CI + review state), PRs awaiting your review, and assigned issues.",
     annotations: { readOnlyHint: true },
     parameters: z.object({
       username: z.string().optional().describe("GitHub username. Defaults to authenticated user."),
@@ -169,12 +159,12 @@ export function registerMyWorkTool(server: FastMCP): void {
           lines.push("No open PRs.");
         } else {
           for (const pr of authoredPrs) {
-            const ci = pr.ci === "SUCCESS" ? "✓" : pr.ci === "FAILURE" ? "✗" : "⏳";
+            const ci = pr.ci === "SUCCESS" ? "CI:ok" : pr.ci === "FAILURE" ? "CI:fail" : "CI:?";
             const draft = pr.draft ? "[DRAFT] " : "";
             const review = pr.reviewDecision?.toLowerCase().replace(/_/g, " ") ?? "pending";
             lines.push(
               `- ${pr.repo}#${pr.number} ${draft}${pr.title}` +
-                ` — ${ci} CI, ${review}, ${relativeTime(pr.updatedAt)}`,
+                ` — ${ci}, ${review}, ${timeAgo(pr.updatedAt)}`,
             );
           }
         }
@@ -186,7 +176,7 @@ export function registerMyWorkTool(server: FastMCP): void {
         } else {
           for (const r of reviewRequests) {
             lines.push(
-              `- ${r.repo}#${r.number} ${r.title} — by ${r.author}, ${relativeTime(r.updatedAt)}`,
+              `- ${r.repo}#${r.number} ${r.title} — by ${r.author}, ${timeAgo(r.updatedAt)}`,
             );
           }
         }
@@ -199,7 +189,7 @@ export function registerMyWorkTool(server: FastMCP): void {
           for (const iss of assignedIssues) {
             const labels = iss.labels.length > 0 ? ` (${iss.labels.join(", ")})` : "";
             lines.push(
-              `- ${iss.repo}#${iss.number} ${iss.title}${labels}, ${relativeTime(iss.updatedAt)}`,
+              `- ${iss.repo}#${iss.number} ${iss.title}${labels}, ${timeAgo(iss.updatedAt)}`,
             );
           }
         }
