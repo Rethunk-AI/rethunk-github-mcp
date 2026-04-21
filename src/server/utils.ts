@@ -13,6 +13,28 @@ export function timeAgo(dateStr: string): string {
 }
 
 /**
+ * Parse a relative duration string ("48h", "7d") or an ISO8601 date/datetime
+ * into an ISO8601 timestamp suitable for GitHub API `since` parameters.
+ * Passthrough for anything that doesn't match: GitHub will reject it.
+ */
+export function parseSince(since: string): string {
+  if (/^\d{4}-\d{2}-\d{2}T/.test(since) || /^\d{4}-\d{2}-\d{2}$/.test(since)) {
+    return since;
+  }
+  const hoursMatch = /^(\d+(?:\.\d+)?)h$/i.exec(since);
+  if (hoursMatch?.[1]) {
+    const ms = Number.parseFloat(hoursMatch[1]) * 3_600_000;
+    return new Date(Date.now() - ms).toISOString();
+  }
+  const daysMatch = /^(\d+(?:\.\d+)?)d$/i.exec(since);
+  if (daysMatch?.[1]) {
+    const ms = Number.parseFloat(daysMatch[1]) * 86_400_000;
+    return new Date(Date.now() - ms).toISOString();
+  }
+  return since;
+}
+
+/**
  * Extract PR numbers from commit message `(#NNN)` patterns.
  * Returns all matches in order of appearance.
  */
@@ -43,4 +65,34 @@ export function tailTruncate(text: string, maxLines: number): string {
   const lines = text.split("\n");
   if (lines.length <= maxLines) return text;
   return `... [${lines.length - maxLines} lines above truncated]\n${lines.slice(-maxLines).join("\n")}`;
+}
+
+/**
+ * Minimal shape for a GitHub status-check rollup context node.
+ * Covers both `CheckRun` (name + conclusion) and `StatusContext` (context + state).
+ */
+export interface CheckNode {
+  name?: string;
+  conclusion?: string;
+  context?: string;
+  state?: string;
+}
+
+/**
+ * Normalize a list of check-rollup context nodes into a flat array of
+ * `{ name, conclusion }` pairs for any check that isn't passing/skipped.
+ *
+ * Used by `repo_status` and `release_readiness` to surface failed CI checks.
+ */
+export function normalizeFailedChecks(nodes: CheckNode[]): { name: string; conclusion: string }[] {
+  return nodes
+    .filter((n) => {
+      if (n.conclusion) return !["SUCCESS", "SKIPPED"].includes(n.conclusion);
+      if (n.state) return n.state !== "SUCCESS";
+      return false;
+    })
+    .map((n) => ({
+      name: n.name ?? n.context ?? "unknown",
+      conclusion: n.conclusion ?? n.state ?? "unknown",
+    }));
 }
