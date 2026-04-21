@@ -9,6 +9,7 @@ import {
 } from "./github-client.js";
 import { errorRespond, jsonRespond, type McpErrorEnvelope, mkError, truncateText } from "./json.js";
 import { FormatSchema, LocalOrRemoteRepoSchema } from "./schemas.js";
+import { extractFirstPR } from "./utils.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -74,14 +75,6 @@ function parseSince(since: string): string {
   }
   // Fall through: return as-is and let GitHub reject it
   return since;
-}
-
-/** Extract PR number from commit message "(#123)" patterns. */
-function extractFirstPR(message: string): number | undefined {
-  const m = /\(#(\d+)\)/.exec(message);
-  if (!m?.[1]) return undefined;
-  const n = Number.parseInt(m[1], 10);
-  return Number.isNaN(n) ? undefined : n;
 }
 
 async function fetchRepoCommits(
@@ -164,8 +157,7 @@ export function registerEcosystemActivityTool(server: FastMCP): void {
   server.addTool({
     name: "ecosystem_activity",
     description:
-      "Merged chronological commit feed across multiple repos, filterable by path or regex. " +
-      "Answers 'what's happened across my ecosystem in the last N hours/days?' in one call.",
+      "Chronological commit feed across multiple repos, filterable by path or commit-message regex.",
     annotations: { readOnlyHint: true },
     parameters: z.object({
       repos: z
@@ -173,19 +165,9 @@ export function registerEcosystemActivityTool(server: FastMCP): void {
         .min(1)
         .max(20)
         .describe("1–20 repos. Each is { owner, repo } or { localPath }."),
-      since: z
-        .string()
-        .describe(
-          "ISO8601 timestamp or relative duration like '48h' or '7d'. Commits before this time are excluded.",
-        ),
-      paths: z
-        .array(z.string())
-        .optional()
-        .describe("Filter to commits touching these paths (applied per repo via GraphQL history)."),
-      grep: z
-        .string()
-        .optional()
-        .describe("Regex filter applied client-side to commit message subjects."),
+      since: z.string().describe("ISO8601 or relative duration (e.g. '48h', '7d')."),
+      paths: z.array(z.string()).optional().describe("Limit to commits touching these paths."),
+      grep: z.string().optional().describe("Client-side regex filter on commit subjects."),
       maxCommitsPerRepo: z
         .number()
         .int()
@@ -193,7 +175,7 @@ export function registerEcosystemActivityTool(server: FastMCP): void {
         .max(200)
         .optional()
         .default(50)
-        .describe("Max commits to fetch per repo (default 50, max 200)."),
+        .describe("Max commits per repo."),
       format: FormatSchema,
     }),
     execute: async (args) => {
