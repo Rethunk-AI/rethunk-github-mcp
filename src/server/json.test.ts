@@ -5,12 +5,14 @@ import {
   jsonRespond,
   MCP_JSON_FORMAT_VERSION,
   mkError,
+  mkLocalRepoNoRemote,
   readMcpServerVersion,
   readPackageVersion,
   spreadDefined,
   truncateLines,
   truncateText,
 } from "./json.js";
+import { captureTool } from "./test-harness.js";
 
 describe("MCP_JSON_FORMAT_VERSION", () => {
   test("is '2'", () => {
@@ -133,5 +135,43 @@ describe("errorRespond", () => {
   test("wraps envelope under top-level `error` key", () => {
     const out = errorRespond(mkError("NOT_FOUND", "repo gone"));
     expect(out).toBe('{"error":{"code":"NOT_FOUND","message":"repo gone","retryable":false}}');
+  });
+});
+
+describe("mkLocalRepoNoRemote", () => {
+  test("returns envelope with LOCAL_REPO_NO_REMOTE code", () => {
+    const e = mkLocalRepoNoRemote("/some/path");
+    expect(e.code).toBe("LOCAL_REPO_NO_REMOTE");
+  });
+
+  test("includes the supplied path in the message", () => {
+    const e = mkLocalRepoNoRemote("/projects/my-repo");
+    expect(e.message).toContain("/projects/my-repo");
+  });
+
+  test("includes a suggestedFix mentioning `origin`", () => {
+    const e = mkLocalRepoNoRemote("/foo");
+    expect(e.suggestedFix).toContain("origin");
+  });
+
+  test("is not retryable", () => {
+    expect(mkLocalRepoNoRemote("/foo").retryable).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// captureTool — test-harness throw path (lines 83-85)
+// ---------------------------------------------------------------------------
+
+describe("captureTool", () => {
+  test("throws when the requested tool name is not registered", () => {
+    // The register function registers nothing, so "wanted-tool" is never found
+    expect(() => captureTool(() => undefined, "wanted-tool")).toThrow(
+      'captureTool: no tool captured named "wanted-tool"',
+    );
+  });
+
+  test("throws with generic message when no toolName given and nothing registered", () => {
+    expect(() => captureTool(() => undefined)).toThrow("captureTool: no tool captured");
   });
 });
