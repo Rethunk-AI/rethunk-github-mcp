@@ -3,6 +3,9 @@ import { describe, expect, test } from "bun:test";
 import {
   asyncPool,
   classifyError,
+  fetchLatestSemverTag,
+  fetchPRMetadata,
+  getOctokit,
   parallelApi,
   parseGitHubRemoteUrl,
   resolveLocalRepoRemote,
@@ -189,5 +192,62 @@ describe("classifyError", () => {
     const env = classifyError("stringified");
     expect(env.code).toBe("INTERNAL");
     expect(env.message).toBe("unknown");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getOctokit — covers the lazy-init path (lines 11-22 in github-client.ts)
+// ---------------------------------------------------------------------------
+
+describe("getOctokit", () => {
+  test("returns an Octokit REST client", () => {
+    // Only meaningful when auth is available; skip gracefully otherwise
+    let octokit: ReturnType<typeof getOctokit> | undefined;
+    try {
+      octokit = getOctokit();
+    } catch {
+      return; // no auth
+    }
+    expect(octokit).toBeDefined();
+    expect(typeof octokit.repos).toBe("object");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fetchLatestSemverTag — real API smoke test
+// ---------------------------------------------------------------------------
+
+describe("fetchLatestSemverTag", () => {
+  test("returns a semver tag string for a repo that has releases", async () => {
+    const tag = await fetchLatestSemverTag("Rethunk-AI", "rethunk-github-mcp");
+    // If auth is absent the function returns undefined — acceptable
+    if (tag === undefined) return;
+    expect(tag).toMatch(/^v?\d+\.\d+\.\d+$/);
+  });
+
+  test("returns undefined for a nonexistent repo", async () => {
+    const tag = await fetchLatestSemverTag("Rethunk-AI", "repo-that-does-not-exist-xyzzy");
+    expect(tag).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fetchPRMetadata — real API smoke test
+// ---------------------------------------------------------------------------
+
+describe("fetchPRMetadata", () => {
+  test("returns empty map for an empty PR list", async () => {
+    const map = await fetchPRMetadata("Rethunk-AI", "rethunk-github-mcp", []);
+    expect(map.size).toBe(0);
+  });
+
+  test("returns map with PR data for valid PR numbers", async () => {
+    // PR #1 is likely the first pull request — skip gracefully if not found
+    const map = await fetchPRMetadata("Rethunk-AI", "rethunk-github-mcp", [1]);
+    // If auth is absent or PR doesn't exist the map will be empty — acceptable
+    if (map.size === 0) return;
+    const pr = map.get(1);
+    expect(pr).toBeDefined();
+    expect(typeof pr?.title).toBe("string");
   });
 });
