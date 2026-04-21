@@ -54,6 +54,13 @@ export function registerMyWorkTool(server: FastMCP): void {
     parameters: z.object({
       username: z.string().optional().describe("GitHub username. Defaults to authenticated user."),
       maxResults: z.number().int().min(1).max(100).optional().default(30),
+      blockedOnMe: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "When true, filters to items needing your immediate action: authored PRs with CI failure or changes requested, plus all pending review requests.",
+        ),
       format: FormatSchema,
     }),
     execute: async (args) => {
@@ -108,7 +115,7 @@ export function registerMyWorkTool(server: FastMCP): void {
       try {
         const data = await graphqlQuery<SearchResponse>(query);
 
-        const authoredPrs = data.authored.nodes
+        const allAuthoredPrs = data.authored.nodes
           .filter((n): n is GraphQLPullRequest => n.__typename === "PullRequest")
           .map((n) => ({
             repo: n.repository.nameWithOwner,
@@ -139,6 +146,16 @@ export function registerMyWorkTool(server: FastMCP): void {
             labels: n.labels.nodes.map((l) => l.name),
             updatedAt: n.updatedAt,
           }));
+
+        // "Blocked on me" filter: authored PRs where action is needed + all review requests
+        const authoredPrs = args.blockedOnMe
+          ? allAuthoredPrs.filter(
+              (pr) =>
+                pr.ci === "FAILURE" ||
+                pr.reviewDecision === "CHANGES_REQUESTED" ||
+                pr.reviewDecision === null,
+            )
+          : allAuthoredPrs;
 
         const result = { username, authoredPrs, reviewRequests, assignedIssues };
 
