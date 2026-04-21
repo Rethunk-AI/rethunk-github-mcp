@@ -13,7 +13,7 @@ import { FormatSchema } from "./schemas.js";
  * Format a UTC ISO8601 date string as `YYYYMMDDHHMMSS`.
  * Input: "2026-04-13T00:17:01Z" → "20260413001701"
  */
-function formatPseudoVersionDate(isoDate: string): string {
+export function formatPseudoVersionDate(isoDate: string): string {
   // Strip non-digit chars, keep only the 14-char datetime portion
   const d = new Date(isoDate);
   const pad = (n: number): string => String(n).padStart(2, "0");
@@ -28,7 +28,7 @@ function formatPseudoVersionDate(isoDate: string): string {
 }
 
 /** Build a Go pseudo-version: v0.0.0-YYYYMMDDHHMMSS-<sha12> */
-function buildGoPseudoVersion(committedDate: string, fullSha: string): string {
+export function buildGoPseudoVersion(committedDate: string, fullSha: string): string {
   const ts = formatPseudoVersionDate(committedDate);
   const sha12 = fullSha.substring(0, 12);
   return `v0.0.0-${ts}-${sha12}`;
