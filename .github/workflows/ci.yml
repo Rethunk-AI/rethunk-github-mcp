@@ -29,6 +29,8 @@ jobs:
         run: bun run check
 
       - name: Unit tests with coverage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bun run test:coverage 2>&1 | tee /tmp/coverage.txt
           node -e "

@@ -228,8 +228,8 @@ export async function fetchLatestSemverTag(
   owner: string,
   repo: string,
 ): Promise<string | undefined> {
-  const octokit = getOctokit();
   try {
+    const octokit = getOctokit();
     const res = await octokit.repos.listTags({ owner, repo, per_page: 20 });
     const semverRe = /^v?\d+\.\d+\.\d+$/;
     return res.data.filter((t) => semverRe.test(t.name))[0]?.name;
