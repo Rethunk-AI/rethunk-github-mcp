@@ -111,5 +111,5 @@ export function truncateLines(text: string, maxLines: number): string {
 /** Truncate text to a maximum number of characters, appending a truncation notice. */
 export function truncateText(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
-  return `${text.slice(0, maxChars)}\n... [truncated]`;
+  return `${text.slice(0, maxChars)}… [truncated]`;
 }

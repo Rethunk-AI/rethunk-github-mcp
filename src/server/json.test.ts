@@ -114,7 +114,7 @@ describe("truncateText", () => {
 
   test("truncates and appends notice when over limit", () => {
     const result = truncateText("abcdef", 3);
-    expect(result).toBe("abc\n... [truncated]");
+    expect(result).toBe("abc… [truncated]");
   });
 });
 
