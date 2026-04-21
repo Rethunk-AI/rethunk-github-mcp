@@ -11,6 +11,7 @@ import {
 } from "./github-client.js";
 import { errorRespond, jsonRespond, type McpErrorEnvelope, mkError, truncateText } from "./json.js";
 import { FormatSchema, LocalOrRemoteRepoSchema } from "./schemas.js";
+import { timeAgo } from "./utils.js";
 
 interface StatusCheckNode {
   name?: string;
@@ -49,15 +50,6 @@ interface RepoResult {
   openIssues?: number;
   local?: { branch: string; dirty: number; ahead: number; behind: number };
   error?: McpErrorEnvelope;
-}
-
-function timeAgo(dateStr: string): string {
-  const sec = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (sec < 60) return "now";
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
-  if (sec < 604800) return `${Math.floor(sec / 86400)}d ago`;
-  return `${Math.floor(sec / 604800)}w ago`;
 }
 
 function getLocalGitState(localPath: string): RepoResult["local"] | undefined {
@@ -134,9 +126,7 @@ export function registerRepoStatusTool(server: FastMCP): void {
   server.addTool({
     name: "repo_status",
     description:
-      "Multi-repo dashboard: default branch HEAD, CI status, open PR/issue counts, " +
-      "latest commit. Accepts multiple repos in one call. Optionally includes local " +
-      "git state when a localPath is provided.",
+      "Multi-repo dashboard: HEAD commit, CI status, open PR/issue counts. Accepts up to 20 repos; include `localPath` for local git state.",
     annotations: { readOnlyHint: true },
     parameters: z.object({
       repos: z.array(LocalOrRemoteRepoSchema).min(1).max(20).describe("Repos to query."),
@@ -237,9 +227,9 @@ export function registerRepoStatusTool(server: FastMCP): void {
             );
           }
           if (r.ci) {
-            const icon = r.ci.status === "success" ? "✓ passing" : "✗ failing";
+            const state = r.ci.status === "success" ? "passing" : "failing";
             const extra = r.ci.failedChecks?.map((c) => c.name).join(", ");
-            lines.push(`CI: ${icon}${extra ? `: ${extra}` : ""}`);
+            lines.push(`CI: ${state}${extra ? `: ${extra}` : ""}`);
           } else {
             lines.push("CI: not configured");
           }
