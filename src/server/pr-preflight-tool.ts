@@ -7,7 +7,7 @@ import {
   graphqlQuery,
   resolveLocalRepoRemote,
 } from "./github-client.js";
-import { errorRespond, jsonRespond, mkError } from "./json.js";
+import { errorRespond, jsonRespond, mkError, mkLocalRepoNoRemote } from "./json.js";
 import { FormatSchema, MaxLogLinesSchema } from "./schemas.js";
 import { tailTruncate } from "./utils.js";
 
@@ -369,13 +369,7 @@ export function registerPrPreflightTool(server: FastMCP): void {
       if (args.localPath) {
         const resolved = resolveLocalRepoRemote(args.localPath);
         if (!resolved) {
-          return errorRespond(
-            mkError(
-              "LOCAL_REPO_NO_REMOTE",
-              `No GitHub origin found for local path ${args.localPath}`,
-              { suggestedFix: "Ensure the path is a git clone with a GitHub `origin` remote." },
-            ),
-          );
+          return errorRespond(mkLocalRepoNoRemote(args.localPath));
         }
         owner = resolved.owner;
         repo = resolved.repo;
