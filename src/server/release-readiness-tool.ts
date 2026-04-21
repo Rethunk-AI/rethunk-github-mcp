@@ -1,17 +1,16 @@
 import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
-import { classifyError, getOctokit, graphqlQuery } from "./github-client.js";
+import {
+  classifyError,
+  fetchLatestSemverTag,
+  fetchPRMetadata,
+  getOctokit,
+  graphqlQuery,
+} from "./github-client.js";
 import { errorRespond, jsonRespond, mkError, truncateText } from "./json.js";
-import { FormatSchema, RepoRefSchema } from "./schemas.js";
+import { FormatSchema, MaxCommitsSchema, RepoRefSchema } from "./schemas.js";
 import { extractPRNumbers } from "./utils.js";
-
-interface PRNode {
-  number: number;
-  title: string;
-  labels: { nodes: { name: string }[] };
-  state: string;
-}
 
 interface CINode {
   name?: string;
@@ -26,36 +25,6 @@ interface CommitForRelease {
   author: string;
   date: string;
   pr?: { number: number; title: string; labels: string[] };
-}
-
-async function fetchPRMetadata(
-  owner: string,
-  repo: string,
-  prNumbers: number[],
-): Promise<Map<number, PRNode>> {
-  const map = new Map<number, PRNode>();
-  if (prNumbers.length === 0) return map;
-
-  const batch = prNumbers.slice(0, 20);
-  const fragments = batch.map(
-    (n) =>
-      `pr${n}: pullRequest(number: ${n}) { number title state labels(first:5) { nodes { name } } }`,
-  );
-  const query = `query($owner:String!,$repo:String!){repository(owner:$owner,name:$repo){${fragments.join(" ")}}}`;
-
-  try {
-    const data = await graphqlQuery<{ repository: Record<string, PRNode | null> }>(query, {
-      owner,
-      repo,
-    });
-    for (const n of batch) {
-      const pr = data.repository[`pr${n}`];
-      if (pr) map.set(n, pr);
-    }
-  } catch {
-    // PR resolution is best-effort
-  }
-  return map;
 }
 
 async function fetchHeadCI(
@@ -100,19 +69,6 @@ async function fetchHeadCI(
   }
 }
 
-/** Fetch the latest semver tag (vX.Y.Z) for a repo. Returns undefined if none found. */
-async function fetchLatestSemverTag(owner: string, repo: string): Promise<string | undefined> {
-  const octokit = getOctokit();
-  try {
-    const res = await octokit.repos.listTags({ owner, repo, per_page: 20 });
-    const semverRe = /^v?\d+\.\d+\.\d+$/;
-    const tags = res.data.filter((t) => semverRe.test(t.name));
-    return tags[0]?.name;
-  } catch {
-    return undefined;
-  }
-}
-
 export function registerReleaseReadinessTool(server: FastMCP): void {
   server.addTool({
     name: "release_readiness",
@@ -126,7 +82,7 @@ export function registerReleaseReadinessTool(server: FastMCP): void {
         .optional()
         .describe("Base ref (tag/branch). Omit to auto-pick the latest semver tag."),
       head: z.string().optional().describe("Head ref; defaults to default branch."),
-      maxCommits: z.number().int().min(1).max(200).optional().default(50),
+      maxCommits: MaxCommitsSchema,
       format: FormatSchema,
     }),
     execute: async (args) => {

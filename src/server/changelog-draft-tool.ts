@@ -1,20 +1,19 @@
 import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
-import { classifyError, getOctokit, graphqlQuery } from "./github-client.js";
+import {
+  classifyError,
+  fetchLatestSemverTag,
+  fetchPRMetadata,
+  getOctokit,
+} from "./github-client.js";
 import { errorRespond, jsonRespond, mkError } from "./json.js";
-import { FormatSchema, RepoRefSchema } from "./schemas.js";
+import { FormatSchema, MaxCommitsSchema, RepoRefSchema } from "./schemas.js";
 import { extractPRNumbers } from "./utils.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface PRNode {
-  number: number;
-  title: string;
-  labels: { nodes: { name: string }[] };
-}
 
 interface ChangelogEntry {
   sha7: string;
@@ -27,44 +26,6 @@ interface ChangelogEntry {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-async function fetchPRMetadata(
-  owner: string,
-  repo: string,
-  prNumbers: number[],
-): Promise<Map<number, PRNode>> {
-  const map = new Map<number, PRNode>();
-  if (prNumbers.length === 0) return map;
-  const batch = prNumbers.slice(0, 20);
-  const fragments = batch.map(
-    (n) => `pr${n}: pullRequest(number: ${n}) { number title labels(first:5) { nodes { name } } }`,
-  );
-  const query = `query($owner:String!,$repo:String!){repository(owner:$owner,name:$repo){${fragments.join(" ")}}}`;
-  try {
-    const data = await graphqlQuery<{ repository: Record<string, PRNode | null> }>(query, {
-      owner,
-      repo,
-    });
-    for (const n of batch) {
-      const pr = data.repository[`pr${n}`];
-      if (pr) map.set(n, pr);
-    }
-  } catch {
-    // best-effort
-  }
-  return map;
-}
-
-async function fetchLatestSemverTag(owner: string, repo: string): Promise<string | undefined> {
-  const octokit = getOctokit();
-  try {
-    const res = await octokit.repos.listTags({ owner, repo, per_page: 20 });
-    const semverRe = /^v?\d+\.\d+\.\d+$/;
-    return res.data.filter((t) => semverRe.test(t.name))[0]?.name;
-  } catch {
-    return undefined;
-  }
-}
 
 /** Group entries by their first label, or "Other" if unlabeled. */
 function groupByLabel(entries: ChangelogEntry[]): Map<string, ChangelogEntry[]> {
@@ -101,7 +62,7 @@ export function registerChangelogDraftTool(server: FastMCP): void {
         .describe(
           "Version string for the section header (e.g. 'v1.3.0'). Defaults to 'Unreleased'.",
         ),
-      maxCommits: z.number().int().min(1).max(200).optional().default(50),
+      maxCommits: MaxCommitsSchema,
       format: FormatSchema,
     }),
     execute: async (args) => {

@@ -169,3 +169,71 @@ export function resolveLocalRepoRemote(
   }
   return undefined;
 }
+
+// ---------------------------------------------------------------------------
+// PR metadata helpers (shared by release_readiness and changelog_draft)
+// ---------------------------------------------------------------------------
+
+/** Minimal PR node returned by batch PR metadata queries. */
+export interface PRNode {
+  number: number;
+  title: string;
+  labels: { nodes: { name: string }[] };
+  /** Only populated when the query explicitly requests it (release_readiness). */
+  state?: string;
+}
+
+/**
+ * Batch-fetch PR metadata for a list of PR numbers via a single GraphQL query.
+ * Fetches up to 20 PRs at a time (GitHub alias limit). Best-effort: errors are
+ * swallowed and the returned map simply omits unresolvable PRs.
+ */
+export async function fetchPRMetadata(
+  owner: string,
+  repo: string,
+  prNumbers: number[],
+  opts: { includeState?: boolean } = {},
+): Promise<Map<number, PRNode>> {
+  const map = new Map<number, PRNode>();
+  if (prNumbers.length === 0) return map;
+
+  const batch = prNumbers.slice(0, 20);
+  const stateField = opts.includeState ? " state" : "";
+  const fragments = batch.map(
+    (n) =>
+      `pr${n}: pullRequest(number: ${n}) { number title${stateField} labels(first:5) { nodes { name } } }`,
+  );
+  const query = `query($owner:String!,$repo:String!){repository(owner:$owner,name:$repo){${fragments.join(" ")}}}`;
+
+  try {
+    const data = await graphqlQuery<{ repository: Record<string, PRNode | null> }>(query, {
+      owner,
+      repo,
+    });
+    for (const n of batch) {
+      const pr = data.repository[`pr${n}`];
+      if (pr) map.set(n, pr);
+    }
+  } catch {
+    // PR resolution is best-effort
+  }
+  return map;
+}
+
+/**
+ * Return the most recent semver tag (vX.Y.Z or X.Y.Z) in a repo.
+ * Returns `undefined` when no matching tag exists or the request fails.
+ */
+export async function fetchLatestSemverTag(
+  owner: string,
+  repo: string,
+): Promise<string | undefined> {
+  const octokit = getOctokit();
+  try {
+    const res = await octokit.repos.listTags({ owner, repo, per_page: 20 });
+    const semverRe = /^v?\d+\.\d+\.\d+$/;
+    return res.data.filter((t) => semverRe.test(t.name))[0]?.name;
+  } catch {
+    return undefined;
+  }
+}
