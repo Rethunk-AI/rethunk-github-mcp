@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { FastMCP } from "fastmcp";
@@ -9,6 +9,15 @@ import { gateAuth } from "./github-auth.js";
 import { classifyError, graphqlQuery, parallelApi } from "./github-client.js";
 import { errorRespond, jsonRespond, type McpErrorEnvelope } from "./json.js";
 import { FormatSchema } from "./schemas.js";
+
+/** Parse GitHub owner/repo from various URL forms. */
+function parseGitHubOwnerRepo(url: string): { owner: string; repo: string } | undefined {
+  const ssh = /github\.com[:/]([^/]+)\/([^/.]+?)(?:\.git)?$/.exec(url);
+  if (ssh?.[1] && ssh[2]) return { owner: ssh[1], repo: ssh[2] };
+  const https = /github\.com\/([^/]+)\/([^/.]+?)(?:\.git)?(?:$|\?)/.exec(url);
+  if (https?.[1] && https[2]) return { owner: https[1], repo: https[2] };
+  return undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,15 +67,6 @@ interface HeadResult {
 // ---------------------------------------------------------------------------
 // Parsers
 // ---------------------------------------------------------------------------
-
-/** Parse GitHub owner/repo from various URL forms. */
-function parseGitHubOwnerRepo(url: string): { owner: string; repo: string } | undefined {
-  const ssh = /github\.com[:/]([^/]+)\/([^/.]+?)(?:\.git)?$/.exec(url);
-  if (ssh?.[1] && ssh[2]) return { owner: ssh[1], repo: ssh[2] };
-  const https = /github\.com\/([^/]+)\/([^/.]+?)(?:\.git)?(?:$|\?)/.exec(url);
-  if (https?.[1] && https[2]) return { owner: https[1], repo: https[2] };
-  return undefined;
-}
 
 /** Extract 12-char SHA prefix from a Go pseudo-version: v0.0.0-YYYYMMDDHHMMSS-<sha12> */
 function pseudoVersionSha(version: string): string | undefined {
@@ -289,37 +289,70 @@ const HEAD_QUERY = `query($owner:String!,$repo:String!){
   }
 }`;
 
+/**
+ * Expand a list of pin file patterns against files that actually exist in `localPath`.
+ * Patterns without a '*' are treated as literal relative paths.
+ * Patterns with '*' are matched as simple glob-style patterns against known file names.
+ */
+function expandPinFiles(patterns: string[], localPath: string): string[] {
+  const knownFiles = ["go.mod", ".gitmodules", "scripts/versions.env", "package.json"];
+
+  const expanded = new Set<string>();
+  for (const pattern of patterns) {
+    if (!pattern.includes("*")) {
+      // Literal path — accept as-is if it exists
+      if (existsSync(join(localPath, pattern))) expanded.add(pattern);
+      else expanded.add(pattern); // include anyway; parsers will early-return if absent
+      continue;
+    }
+    // Convert glob to regex: only support * and ** wildcards
+    const re = new RegExp(
+      "^" +
+        pattern
+          .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+          .replace(/\*\*/g, ".+")
+          .replace(/\*/g, "[^/]+") +
+        "$",
+    );
+    for (const known of knownFiles) {
+      if (re.test(known)) expanded.add(known);
+    }
+    // Also try matching against actual directory contents for unknown files
+    try {
+      const entries = readdirSync(localPath, { recursive: true }) as string[];
+      for (const entry of entries) {
+        if (re.test(String(entry))) expanded.add(String(entry));
+      }
+    } catch {
+      // directory not readable
+    }
+  }
+  return [...expanded];
+}
+
 export function registerPinDriftTool(server: FastMCP): void {
   server.addTool({
     name: "pin_drift",
     description:
-      "Audit upstream dependency pins in a local repo and report how far each pin has " +
-      "drifted from the upstream default branch. Parses go.mod (replace + pseudo-versions), " +
-      ".gitmodules (submodule SHAs), scripts/versions.env (_REF/_SHA keys), and package.json " +
-      "(GitHub URL deps). Answers 'am I up to date with all my upstream pins?' in one call.",
+      "Audit upstream pin drift in a local repo: checks go.mod (replace + pseudo-versions), " +
+      ".gitmodules, scripts/versions.env, and package.json against upstream default branches.",
     annotations: { readOnlyHint: true },
     parameters: z.object({
-      localPath: z
-        .string()
-        .describe("Absolute path to the local repo whose dependency pins to audit."),
+      localPath: z.string().describe("Absolute path to the local repo to audit."),
       pinFiles: z
         .array(z.string())
         .optional()
         .describe(
-          "Files to parse. Defaults to auto-detect: go.mod, .gitmodules, scripts/versions.env, package.json.",
+          "Pin files to parse; supports glob patterns (e.g. '**/versions.env'). Defaults to auto-detect.",
         ),
       ownerAllowlist: z
         .array(z.string())
         .optional()
-        .describe(
-          "Only audit pins whose GitHub owner matches one of these values (case-insensitive). Skips third-party pins when set.",
-        ),
+        .describe("Restrict to these GitHub owners (case-insensitive)."),
       grep: z
         .string()
         .optional()
-        .describe(
-          "Regex filter: only commits whose message matches are counted in grepMatches. All commits still count toward behindBy.",
-        ),
+        .describe("Regex; matching commits are tallied in grepMatches (behindBy is unaffected)."),
       format: FormatSchema,
     }),
     execute: async (args) => {
@@ -334,7 +367,7 @@ export function registerPinDriftTool(server: FastMCP): void {
       const allSkipped: SkippedEntry[] = [];
 
       const autoFiles = ["go.mod", ".gitmodules", "scripts/versions.env", "package.json"];
-      const filesToCheck = args.pinFiles ?? autoFiles;
+      const filesToCheck = args.pinFiles ? expandPinFiles(args.pinFiles, localPath) : autoFiles;
 
       if (filesToCheck.includes("go.mod")) {
         const { pins, skipped } = parseGoMod(localPath);
