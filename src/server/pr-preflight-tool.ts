@@ -42,6 +42,7 @@ interface PRPreflightData {
       commits: {
         nodes: {
           commit: {
+            oid: string;
             statusCheckRollup: {
               state: string;
               contexts: { nodes: CheckContext[] };
@@ -67,6 +68,7 @@ query PRPreflight($owner: String!, $repo: String!, $number: Int!) {
       commits(last: 1) {
         nodes {
           commit {
+            oid
             statusCheckRollup {
               state
               contexts(first: 50) {
@@ -118,6 +120,7 @@ async function checkOnePR(
 ): Promise<{
   number: number;
   title: string;
+  headSha: string;
   safe: boolean;
   reasons: string[];
   mergeable: string;
@@ -143,6 +146,7 @@ async function checkOnePR(
     return {
       number: prNumber,
       title: "",
+      headSha: "",
       safe: false,
       reasons: [`PR ${owner}/${repo}#${prNumber} not found`],
       mergeable: "UNKNOWN",
@@ -180,6 +184,7 @@ async function checkOnePR(
     .map((n) => n.requestedReviewer.login ?? n.requestedReviewer.name ?? "unknown")
     .filter(Boolean);
 
+  const headSha = pr.commits.nodes[0]?.commit.oid ?? "";
   const rollup = pr.commits.nodes[0]?.commit.statusCheckRollup;
   const ciStatus = rollup?.state ?? "UNKNOWN";
   const checks = (rollup?.contexts.nodes ?? []).map((c) => ({
@@ -233,6 +238,7 @@ async function checkOnePR(
   return {
     number: prNumber,
     title: pr.title,
+    headSha,
     safe,
     reasons,
     mergeable: pr.mergeable,
@@ -246,6 +252,75 @@ async function checkOnePR(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Optional CI log fetching (3f: combined PR-status + diagnosis)
+// ---------------------------------------------------------------------------
+
+/** Tail-truncate: keep the LAST maxLines. */
+function tailTruncate(text: string, maxLines: number): string {
+  const lines = text.split("\n");
+  if (lines.length <= maxLines) return text;
+  return `... [${lines.length - maxLines} lines above truncated]\n${lines.slice(-maxLines).join("\n")}`;
+}
+
+interface FailingJobLog {
+  job: string;
+  log: string;
+}
+
+async function fetchPRFailingLogs(
+  owner: string,
+  repo: string,
+  prHeadSha: string,
+  maxLines: number,
+): Promise<FailingJobLog[]> {
+  const octokit = getOctokit();
+  try {
+    const runsRes = await octokit.actions.listWorkflowRunsForRepo({
+      owner,
+      repo,
+      head_sha: prHeadSha,
+      per_page: 5,
+    });
+    const run =
+      runsRes.data.workflow_runs.find((r) => r.conclusion === "failure") ??
+      runsRes.data.workflow_runs[0];
+    if (!run) return [];
+
+    const jobsRes = await octokit.actions.listJobsForWorkflowRun({
+      owner,
+      repo,
+      run_id: run.id,
+      filter: "latest",
+    });
+    const failed = jobsRes.data.jobs.filter((j) => j.conclusion === "failure");
+    if (failed.length === 0) return [];
+
+    const logs: FailingJobLog[] = [];
+    for (const job of failed) {
+      let log = "[logs unavailable]";
+      try {
+        const logRes = await octokit.actions.downloadJobLogsForWorkflowRun({
+          owner,
+          repo,
+          job_id: job.id,
+        });
+        log = tailTruncate(String(logRes.data), maxLines);
+      } catch {
+        // expired or missing
+      }
+      logs.push({ job: job.name, log });
+    }
+    return logs;
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tool registration
+// ---------------------------------------------------------------------------
+
 export function registerPrPreflightTool(server: FastMCP): void {
   server.addTool({
     name: "pr_preflight",
@@ -253,7 +328,8 @@ export function registerPrPreflightTool(server: FastMCP): void {
       "Pre-merge safety check: mergeable state, reviews, CI status, behind-base count, and a computed safe-to-merge verdict. " +
       "Pass a single `number` or an array `numbers` to batch-check multiple PRs. " +
       "Accepts owner+repo OR localPath (auto-detects from git remote). " +
-      "The `ref` parameter accepts a PR number, GitHub PR URL, or owner/repo#N slug.",
+      "The `ref` parameter accepts a PR number, GitHub PR URL, or owner/repo#N slug. " +
+      "Set includeLogs:true to also fetch truncated CI logs for failing jobs in one call.",
     annotations: { readOnlyHint: true },
     parameters: z.object({
       owner: z.string().optional().describe("GitHub owner. Not required when localPath is set."),
@@ -276,6 +352,21 @@ export function registerPrPreflightTool(server: FastMCP): void {
         .string()
         .optional()
         .describe("PR number, GitHub PR URL, or owner/repo#N slug (alternative to number)."),
+      includeLogs: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "When true, fetches truncated CI logs for any failing jobs — combining preflight + diagnosis in one call.",
+        ),
+      maxLogLines: z
+        .number()
+        .int()
+        .min(10)
+        .max(500)
+        .optional()
+        .default(50)
+        .describe("Max log lines per failing job when includeLogs is true."),
       format: FormatSchema,
     }),
     execute: async (args) => {
@@ -344,6 +435,7 @@ export function registerPrPreflightTool(server: FastMCP): void {
             checkOnePR(owner, repo, n).catch((err) => ({
               number: n,
               title: "",
+              headSha: "",
               safe: false,
               reasons: [String(err)],
               mergeable: "UNKNOWN",
@@ -362,16 +454,33 @@ export function registerPrPreflightTool(server: FastMCP): void {
         // Unwrap single-PR result to preserve backward compat
         const isBatch = prNumbers.length > 1;
 
+        // Optionally fetch CI logs for failing PRs (3f: combined preflight + diagnosis)
+        type ResultWithLogs = (typeof results)[number] & { failingLogs?: FailingJobLog[] };
+        const enriched: ResultWithLogs[] = results;
+        if (args.includeLogs) {
+          await Promise.all(
+            enriched.map(async (r) => {
+              if (
+                r.ci.status !== "UNKNOWN" &&
+                r.ci.checks.some((c) => c.conclusion === "FAILURE" || c.conclusion === "failure") &&
+                r.headSha
+              ) {
+                r.failingLogs = await fetchPRFailingLogs(owner, repo, r.headSha, args.maxLogLines);
+              }
+            }),
+          );
+        }
+
         if (args.format === "json") {
           if (!isBatch) {
-            const single = results[0];
+            const single = enriched[0];
             return single ? jsonRespond(single) : jsonRespond({});
           }
-          return jsonRespond({ results });
+          return jsonRespond({ results: enriched });
         }
 
         // Markdown
-        const sections = results.map((result) => {
+        const sections = enriched.map((result) => {
           if (!result) return "";
           const owner2 = owner;
           const repo2 = repo;
@@ -435,7 +544,16 @@ export function registerPrPreflightTool(server: FastMCP): void {
           return md;
         });
 
-        return sections.join("\n---\n\n");
+        // Append failing logs to markdown (if includeLogs was set)
+        const logBlock = enriched
+          .flatMap((r) => (r as ResultWithLogs).failingLogs ?? [])
+          .map((l) => `### CI logs: ${l.job}\n\`\`\`\n${l.log}\n\`\`\``)
+          .join("\n\n");
+
+        return (
+          sections.join("\n---\n\n") +
+          (logBlock ? `\n\n---\n\n## Failing CI Logs\n\n${logBlock}` : "")
+        );
       } catch (err) {
         return errorRespond(classifyError(err));
       }
