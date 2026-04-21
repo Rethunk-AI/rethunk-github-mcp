@@ -10,14 +10,7 @@ import {
 } from "./github-client.js";
 import { errorRespond, jsonRespond, mkError, truncateText } from "./json.js";
 import { FormatSchema, MaxCommitsSchema, RepoRefSchema } from "./schemas.js";
-import { extractPRNumbers } from "./utils.js";
-
-interface CINode {
-  name?: string;
-  conclusion?: string;
-  context?: string;
-  state?: string;
-}
+import { type CheckNode, extractPRNumbers, normalizeFailedChecks } from "./utils.js";
 
 interface CommitForRelease {
   sha7: string;
@@ -44,7 +37,7 @@ async function fetchHeadCI(
     const data = await graphqlQuery<{
       repository: {
         object: {
-          statusCheckRollup: { state: string; contexts: { nodes: CINode[] } } | null;
+          statusCheckRollup: { state: string; contexts: { nodes: CheckNode[] } } | null;
         } | null;
       };
     }>(query, { owner, repo });
@@ -52,16 +45,7 @@ async function fetchHeadCI(
     const rollup = data.repository.object?.statusCheckRollup;
     if (!rollup) return { status: "not_configured", failedChecks: [] };
 
-    const failed = rollup.contexts.nodes
-      .filter((n) => {
-        if (n.conclusion) return !["SUCCESS", "SKIPPED"].includes(n.conclusion);
-        if (n.state) return n.state !== "SUCCESS";
-        return false;
-      })
-      .map((n) => ({
-        name: n.name ?? n.context ?? "unknown",
-        conclusion: n.conclusion ?? n.state ?? "unknown",
-      }));
+    const failed = normalizeFailedChecks(rollup.contexts.nodes);
 
     return { status: rollup.state.toLowerCase(), failedChecks: failed };
   } catch {
