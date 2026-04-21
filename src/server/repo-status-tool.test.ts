@@ -2,19 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { registerRepoStatusTool } from "./repo-status-tool.js";
 import { captureTool } from "./test-harness.js";
-
-// ---------------------------------------------------------------------------
-// timeAgo — reproduced inline to avoid exporting a private helper
-// ---------------------------------------------------------------------------
-
-function timeAgo(dateStr: string): string {
-  const sec = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (sec < 60) return "now";
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
-  if (sec < 604800) return `${Math.floor(sec / 86400)}d ago`;
-  return `${Math.floor(sec / 604800)}w ago`;
-}
+import { timeAgo } from "./utils.js";
 
 function msAgo(ms: number): string {
   return new Date(Date.now() - ms).toISOString();

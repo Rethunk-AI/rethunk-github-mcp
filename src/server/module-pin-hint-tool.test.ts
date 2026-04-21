@@ -1,27 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-// ---------------------------------------------------------------------------
-// Pure helper under test (reproduced inline to avoid GitHub API calls)
-// ---------------------------------------------------------------------------
-
-function formatPseudoVersionDate(isoDate: string): string {
-  const d = new Date(isoDate);
-  const pad = (n: number): string => String(n).padStart(2, "0");
-  return (
-    String(d.getUTCFullYear()) +
-    pad(d.getUTCMonth() + 1) +
-    pad(d.getUTCDate()) +
-    pad(d.getUTCHours()) +
-    pad(d.getUTCMinutes()) +
-    pad(d.getUTCSeconds())
-  );
-}
-
-function buildGoPseudoVersion(committedDate: string, fullSha: string): string {
-  const ts = formatPseudoVersionDate(committedDate);
-  const sha12 = fullSha.substring(0, 12);
-  return `v0.0.0-${ts}-${sha12}`;
-}
+import { buildGoPseudoVersion, formatPseudoVersionDate } from "./module-pin-hint-tool.js";
 
 // ---------------------------------------------------------------------------
 // Tests

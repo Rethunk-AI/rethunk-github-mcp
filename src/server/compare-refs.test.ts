@@ -1,60 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-// ---------------------------------------------------------------------------
-// Helpers under test (pure functions, no GitHub I/O)
-// ---------------------------------------------------------------------------
-
-// Re-export pure helpers by re-implementing the logic under test inline so
-// we don't need to mock the module system.  The real module exports are the
-// public contract; we test the observable behaviour (output shape / values)
-// via the exported functions in a thin wrapper.
-
-/** Reproduce formatPseudoVersionDate logic (copied from module-pin-hint-tool internals). */
-function formatPseudoVersionDate(isoDate: string): string {
-  const d = new Date(isoDate);
-  const pad = (n: number): string => String(n).padStart(2, "0");
-  return (
-    String(d.getUTCFullYear()) +
-    pad(d.getUTCMonth() + 1) +
-    pad(d.getUTCDate()) +
-    pad(d.getUTCHours()) +
-    pad(d.getUTCMinutes()) +
-    pad(d.getUTCSeconds())
-  );
-}
-
-function buildGoPseudoVersion(committedDate: string, fullSha: string): string {
-  const ts = formatPseudoVersionDate(committedDate);
-  const sha12 = fullSha.substring(0, 12);
-  return `v0.0.0-${ts}-${sha12}`;
-}
-
-/** Reproduce parseSince logic from ecosystem-activity-tool. */
-function parseSince(since: string): string {
-  if (/^\d{4}-\d{2}-\d{2}T/.test(since) || /^\d{4}-\d{2}-\d{2}$/.test(since)) {
-    return since;
-  }
-  const hoursMatch = /^(\d+(?:\.\d+)?)h$/i.exec(since);
-  if (hoursMatch?.[1]) {
-    const ms = Number.parseFloat(hoursMatch[1]) * 3_600_000;
-    return new Date(Date.now() - ms).toISOString();
-  }
-  const daysMatch = /^(\d+(?:\.\d+)?)d$/i.exec(since);
-  if (daysMatch?.[1]) {
-    const ms = Number.parseFloat(daysMatch[1]) * 86_400_000;
-    return new Date(Date.now() - ms).toISOString();
-  }
-  return since;
-}
-
-/** Reproduce pseudoVersionSha extraction from pin-drift-tool. */
-function pseudoVersionSha(version: string): string | undefined {
-  const m = /v\d+\.\d+\.\d+-\d{14}-([0-9a-f]{12})$/.exec(version);
-  return m?.[1];
-}
+import { buildGoPseudoVersion } from "./module-pin-hint-tool.js";
+import { pseudoVersionSha } from "./pin-drift-tool.js";
+import { parseSince } from "./utils.js";
 
 // ---------------------------------------------------------------------------
-// Tests
+// buildGoPseudoVersion (from module-pin-hint-tool)
 // ---------------------------------------------------------------------------
 
 describe("buildGoPseudoVersion", () => {
@@ -83,6 +34,10 @@ describe("buildGoPseudoVersion", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// parseSince (from utils)
+// ---------------------------------------------------------------------------
+
 describe("parseSince", () => {
   test("passes ISO8601 timestamps through unchanged", () => {
     expect(parseSince("2026-04-10T17:19:40Z")).toBe("2026-04-10T17:19:40Z");
@@ -97,7 +52,6 @@ describe("parseSince", () => {
     const result = parseSince("48h");
     const after = Date.now();
     const resultMs = new Date(result).getTime();
-    // Should be within ~1s of (now - 48h)
     expect(resultMs).toBeGreaterThanOrEqual(before - 48 * 3_600_000 - 100);
     expect(resultMs).toBeLessThanOrEqual(after - 48 * 3_600_000 + 100);
   });
@@ -115,6 +69,10 @@ describe("parseSince", () => {
     expect(parseSince("yesterday")).toBe("yesterday");
   });
 });
+
+// ---------------------------------------------------------------------------
+// pseudoVersionSha (from pin-drift-tool)
+// ---------------------------------------------------------------------------
 
 describe("pseudoVersionSha", () => {
   test("extracts 12-char SHA from valid pseudo-version", () => {
