@@ -5,6 +5,89 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] — 2026-04-21
+
+First stable release. The public tool surface, JSON response contract
+(`MCP_JSON_FORMAT_VERSION: "2"`), and structured error envelope are now
+declared stable. No breaking changes are expected in 1.x.
+
+### Added
+
+- **`changelog_draft` tool** — generates a formatted `CHANGELOG.md` section
+  from commits between two refs, grouped by label, with optional version
+  header. Shares the same base→head + PR-metadata pipeline as
+  `release_readiness`.
+- **`pr_preflight`: batch mode** — `numbers: number[]` checks multiple PRs in
+  a single call.
+- **`pr_preflight`: flexible ref input** — `ref` parameter accepts a PR number,
+  a GitHub URL (`https://github.com/owner/repo/pull/N`), or an
+  `owner/repo#N` slug in addition to `owner`/`repo`/`number`.
+- **`pr_preflight`: `localPath` auto-detection** — pass `localPath: "."` to
+  resolve `owner`/`repo` from the local clone's `origin` remote.
+- **`pr_preflight`: combined preflight + CI diagnosis** — `includeLogs: true`
+  fetches truncated failing-job logs in the same call, removing the need for
+  a separate `ci_diagnosis` round-trip.
+- **`my_work`: `blockedOnMe` lens** — boolean flag that filters to PRs where
+  the authenticated user is the blocker (review requested, changes requested
+  by others, or CI failing on their PR).
+- **`ci_diagnosis`: `grepLog` filter** — server-side regex filter on log lines,
+  reducing output tokens when only specific error patterns are needed.
+- **`release_readiness`: auto-base** — omitting `base` now auto-selects the
+  latest semver tag (`vX.Y.Z` / `X.Y.Z`), removing the need to look up the
+  tag manually.
+- **`pin_drift`: glob patterns** — `pinFiles` accepts glob patterns (e.g.
+  `"**/go.mod"`) in addition to exact paths.
+- **Shared `mkLocalRepoNoRemote` error factory** in `json.ts` — single
+  canonical `LOCAL_REPO_NO_REMOTE` envelope used by `repo_status`,
+  `ecosystem_activity`, and `pr_preflight`.
+
+### Changed
+
+- **Default output format is now `"json"`** (was `"markdown"`). LLM callers
+  benefit from structured output by default; human-readable markdown is still
+  available via `format: "markdown"`.
+- **`ci_diagnosis` `maxLogLines` default lowered from 150 → 50.** Reduces
+  output token cost for the common case; increase explicitly when needed.
+- **`release_readiness` commit output** is now a compact bullet list instead
+  of a multi-column markdown table, reducing token width.
+- All tool and parameter descriptions trimmed of filler phrasing for lower
+  prompt-token cost.
+- Markdown output across all tools replaces Unicode emoji status indicators
+  (✓ ✗ ⧗) with plain-text equivalents (`passing`, `failing`, `CI:ok`,
+  `CI:fail`), saving multi-byte token sequences.
+- `truncateText` no longer injects a stray `\n` before the truncation marker.
+
+### Fixed
+
+- **`repo_status` draft-PR count** was fetching 100 full PR nodes to count
+  drafts; now uses the GitHub Search API for an O(1) count.
+- **`ecosystem_activity`** was mislabeling commit subjects as `pr.title`; the
+  field is now omitted (only `pr.number` is returned).
+- **`readPackageVersion`** now caches its result; previously read
+  `package.json` from disk on every invocation.
+
+### Refactored
+
+Significant internal consolidation with no user-visible API change:
+
+- **`src/server/utils.ts`** (new) — canonical home for cross-tool pure
+  helpers: `timeAgo`, `parseSince`, `extractPRNumbers`, `extractFirstPR`,
+  `tailTruncate`, `CheckNode`, `normalizeFailedChecks`.
+- **`src/server/github-client.ts`** gains `PRNode`, `fetchPRMetadata` (batched
+  GraphQL, up to 20 PRs), and `fetchLatestSemverTag` — previously duplicated
+  verbatim in `changelog_draft` and `release_readiness`.
+- **`src/server/schemas.ts`** gains `MaxCommitsSchema` and `MaxLogLinesSchema`
+  — previously independent `z.number()` chains in four tool files.
+- All tool files adopt shared helpers, eliminating ~200 lines of duplication.
+- Test files now import from real source modules instead of re-implementing
+  logic inline, giving meaningful coverage to `utils.ts`,
+  `module-pin-hint-tool.ts`, and `pin-drift-tool.ts`.
+
+### Docs
+
+- `AGENTS.md` corrected `MCP_JSON_FORMAT_VERSION` (`"1"` → `"2"`) and updated
+  the implementation map to include `utils.ts` and `changelog-draft-tool.ts`.
+
 ## [0.3.0] — 2026-04-17
 
 ### Changed (breaking)
