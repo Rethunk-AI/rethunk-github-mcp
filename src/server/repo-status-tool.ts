@@ -9,16 +9,15 @@ import {
   parallelApi,
   resolveLocalRepoRemote,
 } from "./github-client.js";
-import { errorRespond, jsonRespond, type McpErrorEnvelope, mkError, truncateText } from "./json.js";
+import {
+  errorRespond,
+  jsonRespond,
+  type McpErrorEnvelope,
+  mkLocalRepoNoRemote,
+  truncateText,
+} from "./json.js";
 import { FormatSchema, LocalOrRemoteRepoSchema } from "./schemas.js";
-import { timeAgo } from "./utils.js";
-
-interface StatusCheckNode {
-  name?: string;
-  conclusion?: string;
-  context?: string;
-  state?: string;
-}
+import { type CheckNode, normalizeFailedChecks, timeAgo } from "./utils.js";
 
 interface RepoQueryResult {
   repository: {
@@ -30,7 +29,7 @@ interface RepoQueryResult {
         author: { user: { login: string } | null; date: string };
         statusCheckRollup: {
           state: string;
-          contexts: { nodes: StatusCheckNode[] };
+          contexts: { nodes: CheckNode[] };
         } | null;
       };
     } | null;
@@ -147,11 +146,7 @@ export function registerRepoStatusTool(server: FastMCP): void {
             return {
               owner: "unknown",
               repo: repoRef.localPath,
-              error: mkError(
-                "LOCAL_REPO_NO_REMOTE",
-                `No GitHub origin found for local path ${repoRef.localPath}`,
-                { suggestedFix: "Ensure the path is a git clone with a GitHub `origin` remote." },
-              ),
+              error: mkLocalRepoNoRemote(repoRef.localPath),
             };
           }
           owner = resolved.owner;
@@ -184,16 +179,7 @@ export function registerRepoStatusTool(server: FastMCP): void {
 
             const rollup = c.statusCheckRollup;
             if (rollup) {
-              const failed = rollup.contexts.nodes
-                .filter((n) => {
-                  if (n.conclusion) return !["SUCCESS", "SKIPPED"].includes(n.conclusion);
-                  if (n.state) return n.state !== "SUCCESS";
-                  return false;
-                })
-                .map((n) => ({
-                  name: n.name ?? n.context ?? "unknown",
-                  conclusion: n.conclusion ?? n.state ?? "unknown",
-                }));
+              const failed = normalizeFailedChecks(rollup.contexts.nodes);
               result.ci = {
                 status: rollup.state.toLowerCase(),
                 ...(failed.length > 0 ? { failedChecks: failed } : {}),
