@@ -1,5 +1,6 @@
 import type { FastMCP } from "fastmcp";
 
+import { registerChangelogDraftTool } from "./changelog-draft-tool.js";
 import { registerCiDiagnosisTool } from "./ci-diagnosis-tool.js";
 import { registerEcosystemActivityTool } from "./ecosystem-activity-tool.js";
 import { registerModulePinHintTool } from "./module-pin-hint-tool.js";
@@ -20,4 +21,5 @@ export function registerRethunkGitHubTools(server: FastMCP): void {
   registerPinDriftTool(server);
   registerEcosystemActivityTool(server);
   registerModulePinHintTool(server);
+  registerChangelogDraftTool(server);
 }
