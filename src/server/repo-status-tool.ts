@@ -34,7 +34,6 @@ interface RepoQueryResult {
       };
     } | null;
     openPRs: { totalCount: number };
-    draftPRs: { nodes: { isDraft: boolean }[] };
     openIssues: { totalCount: number };
   };
 }
@@ -120,9 +119,15 @@ query RepoStatus($owner: String!, $name: String!) {
       }
     }
     openPRs: pullRequests(states: OPEN) { totalCount }
-    draftPRs: pullRequests(states: OPEN, first: 100) { nodes { isDraft } }
     openIssues: issues(states: OPEN) { totalCount }
   }
+}`;
+
+// The GraphQL API doesn't expose a draft:true filter on pullRequests.totalCount directly.
+// Use a separate search-based query for draft count to avoid fetching 100 nodes.
+const DRAFT_COUNT_QUERY = `
+query DraftCount($query: String!) {
+  search(query: $query, type: ISSUE, first: 0) { issueCount }
 }`;
 
 export function registerRepoStatusTool(server: FastMCP): void {
@@ -168,10 +173,12 @@ export function registerRepoStatusTool(server: FastMCP): void {
         }
 
         try {
-          const data = await graphqlQuery<RepoQueryResult>(REPO_STATUS_QUERY, {
-            owner,
-            name: repo,
-          });
+          const [data, draftData] = await Promise.all([
+            graphqlQuery<RepoQueryResult>(REPO_STATUS_QUERY, { owner, name: repo }),
+            graphqlQuery<{ search: { issueCount: number } }>(DRAFT_COUNT_QUERY, {
+              query: `repo:${owner}/${repo} is:pr is:open draft:true`,
+            }),
+          ]);
           const r = data.repository;
           const result: RepoResult = { owner, repo };
 
@@ -205,7 +212,7 @@ export function registerRepoStatusTool(server: FastMCP): void {
           }
 
           result.openPRs = r.openPRs.totalCount;
-          result.draftPRs = r.draftPRs.nodes.filter((n) => n.isDraft).length;
+          result.draftPRs = draftData.search.issueCount;
           result.openIssues = r.openIssues.totalCount;
           if (localState) result.local = localState;
 
