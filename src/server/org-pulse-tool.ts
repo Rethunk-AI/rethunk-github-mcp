@@ -139,9 +139,7 @@ export function registerOrgPulseTool(server: FastMCP): void {
   server.addTool({
     name: "org_pulse",
     description:
-      "Org-wide activity dashboard: scans all recently-active repos in a GitHub org and " +
-      "surfaces actionable items — failing CI, stale PRs, unreviewed PRs. Answers " +
-      "'what needs attention across the org?' in one call.",
+      "Org-wide health dashboard: scans recently-active repos and surfaces failing CI, stale PRs, unreviewed PRs.",
     annotations: { readOnlyHint: true },
     parameters: z.object({
       org: z.string().describe("GitHub organization login."),
@@ -152,19 +150,15 @@ export function registerOrgPulseTool(server: FastMCP): void {
         .max(100)
         .optional()
         .default(30)
-        .describe("Maximum number of repos to scan (ordered by most recently pushed)."),
+        .describe("Repos to scan (by most-recently-pushed)."),
       staleDays: z
         .number()
         .int()
         .min(1)
         .optional()
         .default(7)
-        .describe("PRs with no activity for this many days are considered stale."),
-      includeArchived: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe("Include archived repositories in the scan."),
+        .describe("Days without activity before a PR is considered stale."),
+      includeArchived: z.boolean().optional().default(false).describe("Include archived repos."),
       format: FormatSchema,
     }),
     execute: async (args) => {
@@ -291,11 +285,11 @@ export function registerOrgPulseTool(server: FastMCP): void {
           lines.push("");
           const ciLabel =
             item.ci === "failure"
-              ? "✗ CI failing"
+              ? "CI: failing"
               : item.ci === "success"
-                ? "✓ CI passing"
+                ? "CI: passing"
                 : item.ci === "pending"
-                  ? "⧗ CI pending"
+                  ? "CI: pending"
                   : "CI: none";
           lines.push(`### ${item.repo} — ${ciLabel}`);
 
