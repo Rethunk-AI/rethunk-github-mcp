@@ -5,6 +5,34 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-04-21
+
+### Docs
+
+- **README.md**: added npm version badge; corrected format-default note
+  ("JSON, not markdown"); added `changelog_draft` to the tools table;
+  clarified npmjs vs GitHub Packages description.
+- **`docs/mcp-tools.md`**: full refresh — added `changelog_draft` to the
+  tools overview table and its own parameter + JSON-output reference section;
+  corrected all `format` parameter defaults from `"markdown"` to `"json"`;
+  rewrote `pr_preflight` params to document `localPath`, `numbers[]`, `ref`,
+  `includeLogs`, `maxLogLines`, and `grepLog`; marked `release_readiness`
+  `base` as optional with auto-semver-tag default; added `my_work`
+  `blockedOnMe`; fixed `ci_diagnosis` `maxLogLines` default (150 → 50) and
+  added `grepLog`; noted glob support in `pin_drift` `pinFiles`.
+- **`AGENTS.md`**: corrected implementation-map symbol list — removed dead
+  `spreadWhen`, added `mkLocalRepoNoRemote`, `mkError`, `errorRespond`,
+  `spreadDefined` to `json.ts`; expanded `utils.ts` to full export list
+  (`parseSince`, `extractFirstPR`, `extractPRNumbers`, `tailTruncate`,
+  `CheckNode`, `normalizeFailedChecks`); added `MaxCommitsSchema` /
+  `MaxLogLinesSchema` to `schemas.ts`; added `classifyError`,
+  `parseGitHubRemoteUrl`, `PRNode`, `fetchPRMetadata`, `fetchLatestSemverTag`
+  to `github-client.ts`; fixed stray leading-pipe row formatting on two rows;
+  extended Changing-contracts checklist to include `AGENTS.md`.
+- **`docs/install.md`**: updated GitHub Packages note — npmjs
+  `@rethunk/github-mcp` is now current as of v1.0.0 (was noted as possibly
+  lagging).
+
 ## [1.0.0] — 2026-04-21
 
 First stable release. The public tool surface (10 tools), JSON response
@@ -216,6 +244,7 @@ Initial public tool surface: `repo_status`, `my_work`, `pr_preflight`,
 `release_readiness`, `ci_diagnosis`, `org_pulse`, `pin_drift`,
 `ecosystem_activity`, `module_pin_hint`.
 
+[1.0.1]: https://github.com/Rethunk-AI/rethunk-github-mcp/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Rethunk-AI/rethunk-github-mcp/releases/tag/v1.0.0
 [0.3.0]: https://github.com/Rethunk-AI/rethunk-github-mcp/releases/tag/v0.3.0
 [0.2.1]: https://github.com/Rethunk-AI/rethunk-github-mcp/releases/tag/v0.2.1
