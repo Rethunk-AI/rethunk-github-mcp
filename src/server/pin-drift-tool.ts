@@ -6,18 +6,9 @@ import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { countBehind, resolveRef } from "./compare-refs.js";
 import { gateAuth } from "./github-auth.js";
-import { classifyError, graphqlQuery, parallelApi } from "./github-client.js";
+import { classifyError, graphqlQuery, parallelApi, parseGitHubRemoteUrl } from "./github-client.js";
 import { errorRespond, jsonRespond, type McpErrorEnvelope } from "./json.js";
 import { FormatSchema } from "./schemas.js";
-
-/** Parse GitHub owner/repo from various URL forms. */
-function parseGitHubOwnerRepo(url: string): { owner: string; repo: string } | undefined {
-  const ssh = /github\.com[:/]([^/]+)\/([^/.]+?)(?:\.git)?$/.exec(url);
-  if (ssh?.[1] && ssh[2]) return { owner: ssh[1], repo: ssh[2] };
-  const https = /github\.com\/([^/]+)\/([^/.]+?)(?:\.git)?(?:$|\?)/.exec(url);
-  if (https?.[1] && https[2]) return { owner: https[1], repo: https[2] };
-  return undefined;
-}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -155,7 +146,7 @@ function parseGitModules(localPath: string): { pins: RawPin[]; skipped: SkippedE
 
     const subPath = pathMatch[1].trim();
     const url = urlMatch[1].trim();
-    const ownerRepo = parseGitHubOwnerRepo(url);
+    const ownerRepo = parseGitHubRemoteUrl(url);
     if (!ownerRepo) {
       skipped.push({
         source: ".gitmodules",
