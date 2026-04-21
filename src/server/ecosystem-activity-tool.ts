@@ -41,7 +41,7 @@ interface EcosystemCommit {
   message: string;
   author: string;
   date: string;
-  pr: { number: number; title: string } | null;
+  pr: { number: number } | null;
 }
 
 interface RepoCommitResult {
@@ -144,7 +144,7 @@ async function fetchRepoCommits(
         message: n.messageHeadline,
         author: n.author.user?.login ?? n.author.name ?? "unknown",
         date: n.committedDate,
-        pr: prNum !== undefined ? { number: prNum, title: n.messageHeadline } : null,
+        pr: prNum !== undefined ? { number: prNum } : null,
       };
     });
 
