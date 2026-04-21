@@ -8,7 +8,6 @@ import {
   readMcpServerVersion,
   readPackageVersion,
   spreadDefined,
-  spreadWhen,
   truncateLines,
   truncateText,
 } from "./json.js";
@@ -46,18 +45,6 @@ describe("jsonRespond", () => {
 
   test("handles empty object", () => {
     expect(jsonRespond({})).toBe("{}");
-  });
-});
-
-describe("spreadWhen", () => {
-  test("returns fields when condition is true", () => {
-    const result = { base: 1, ...spreadWhen(true, { extra: 2 }) };
-    expect(result).toEqual({ base: 1, extra: 2 });
-  });
-
-  test("returns empty object when condition is false", () => {
-    const result = { base: 1, ...spreadWhen(false, { extra: 2 }) };
-    expect(result).toEqual({ base: 1 });
   });
 });
 

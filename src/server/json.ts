@@ -86,7 +86,7 @@ export function errorRespond(envelope: McpErrorEnvelope): string {
 }
 
 /** Spread into an object literal only when `cond` is true; otherwise `{}`. */
-export function spreadWhen<T extends Record<string, unknown>>(
+function spreadWhen<T extends Record<string, unknown>>(
   cond: boolean,
   fields: T,
 ): T | Record<string, never> {
