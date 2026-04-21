@@ -60,7 +60,7 @@ interface HeadResult {
 // ---------------------------------------------------------------------------
 
 /** Extract 12-char SHA prefix from a Go pseudo-version: v0.0.0-YYYYMMDDHHMMSS-<sha12> */
-function pseudoVersionSha(version: string): string | undefined {
+export function pseudoVersionSha(version: string): string | undefined {
   const m = /v\d+\.\d+\.\d+-\d{14}-([0-9a-f]{12})$/.exec(version);
   return m?.[1];
 }
