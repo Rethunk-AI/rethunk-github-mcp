@@ -15,7 +15,8 @@ IDEs injecting context: don't re-link from rules.
 |------|---------|
 | [`src/server.ts`](src/server.ts) | `FastMCP`; `readMcpServerVersion()`; `registerRethunkGitHubTools` |
 | [`src/server/tools.ts`](src/server/tools.ts) | `registerRethunkGitHubTools` — dispatches to `register*` below |
-| [`src/server/json.ts`](src/server/json.ts) | `MCP_JSON_FORMAT_VERSION="1"`, `jsonRespond()` (minified), `spreadWhen`, `spreadDefined`, `truncateLines`, `truncateText` |
+| [`src/server/json.ts`](src/server/json.ts) | `MCP_JSON_FORMAT_VERSION="2"`, `jsonRespond()` (minified), `spreadWhen`, `spreadDefined`, `truncateLines`, `truncateText` |
+|| [`src/server/utils.ts`](src/server/utils.ts) | `timeAgo`, `extractFirstPR`, `extractPRNumbers` — shared across tool files |
 | [`src/server/schemas.ts`](src/server/schemas.ts) | `FormatSchema`, `RepoRefSchema`, `LocalOrRemoteRepoSchema` |
 | [`src/server/github-auth.ts`](src/server/github-auth.ts) | `gateAuth` (GITHUB_TOKEN → GH_TOKEN → gh CLI), `resetAuthCache` |
 | [`src/server/github-client.ts`](src/server/github-client.ts) | `getOctokit` (REST), `graphqlQuery` (typed GraphQL), `asyncPool`, `parallelApi`, `resolveLocalRepoRemote` |
@@ -28,6 +29,7 @@ IDEs injecting context: don't re-link from rules.
 | [`src/server/pin-drift-tool.ts`](src/server/pin-drift-tool.ts) | `pin_drift` — upstream pin drift audit |
 | [`src/server/ecosystem-activity-tool.ts`](src/server/ecosystem-activity-tool.ts) | `ecosystem_activity` — cross-repo commit feed |
 | [`src/server/module-pin-hint-tool.ts`](src/server/module-pin-hint-tool.ts) | `module_pin_hint` — Go pseudo-version formatter |
+|| [`src/server/changelog-draft-tool.ts`](src/server/changelog-draft-tool.ts) | `changelog_draft` — CHANGELOG.md section from unreleased commits |
 | [`src/server/compare-refs.ts`](src/server/compare-refs.ts) | Shared: `resolveRef`, `fetchCommitHistory`, `countBehind` |
 
 ## API strategy
@@ -38,7 +40,7 @@ IDEs injecting context: don't re-link from rules.
 
 ## Changing contracts
 
-- **`MCP_JSON_FORMAT_VERSION`** (now `"1"`): bump on incompatible JSON changes.
+- **`MCP_JSON_FORMAT_VERSION`** (now `"2"`): bump on incompatible JSON changes.
 - **Public tool surface:** rename/add → update [docs/mcp-tools.md](docs/mcp-tools.md) + [README.md](README.md).
 - **Auth changes:** update [docs/install.md](docs/install.md) `env` examples.
 
