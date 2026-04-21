@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { countBehind, fetchCommitHistory, resolveRef } from "./compare-refs.js";
 import { buildGoPseudoVersion } from "./module-pin-hint-tool.js";
 import { pseudoVersionSha } from "./pin-drift-tool.js";
 import { parseSince } from "./utils.js";
@@ -89,5 +90,110 @@ describe("pseudoVersionSha", () => {
 
   test("returns undefined for malformed pseudo-version", () => {
     expect(pseudoVersionSha("v0.0.0-20260411-short")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveRef, fetchCommitHistory, countBehind (from compare-refs)
+//
+// These call the GitHub API; tests skip gracefully when auth is absent or
+// the network is unavailable.
+// ---------------------------------------------------------------------------
+
+const TEST_OWNER = "Rethunk-AI";
+const TEST_REPO = "rethunk-github-mcp";
+
+describe("resolveRef", () => {
+  test("returns { oid, committedDate } for a known ref", async () => {
+    const result = await resolveRef(TEST_OWNER, TEST_REPO, "main");
+    if (!result) return; // no auth / network
+    expect(result.oid).toHaveLength(40);
+    expect(result.oid).toMatch(/^[0-9a-f]{40}$/);
+    expect(result.committedDate).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  test("returns null for a ref that does not exist", async () => {
+    const result = await resolveRef(TEST_OWNER, TEST_REPO, "refs/heads/nonexistent-branch-xyzzy");
+    // Either null (ref not found) or null (no auth) — both acceptable
+    expect(result).toBeNull();
+  });
+});
+
+describe("fetchCommitHistory", () => {
+  test("returns commits array and defaultBranch for a live repo", async () => {
+    let result: Awaited<ReturnType<typeof fetchCommitHistory>>;
+    try {
+      result = await fetchCommitHistory(TEST_OWNER, TEST_REPO, "main", { limit: 5 });
+    } catch {
+      return; // no auth / network
+    }
+    expect(result.defaultBranch).toBe("main");
+    expect(Array.isArray(result.commits)).toBe(true);
+    if (result.commits.length > 0) {
+      const c = result.commits[0]!;
+      expect(c.sha7).toHaveLength(7);
+      expect(typeof c.message).toBe("string");
+      expect(typeof c.author).toBe("string");
+      expect(c.date).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    }
+  });
+
+  test("respects the limit option", async () => {
+    let result: Awaited<ReturnType<typeof fetchCommitHistory>>;
+    try {
+      result = await fetchCommitHistory(TEST_OWNER, TEST_REPO, "main", { limit: 2 });
+    } catch {
+      return;
+    }
+    expect(result.commits.length).toBeLessThanOrEqual(2);
+  });
+});
+
+describe("countBehind", () => {
+  test("returns behindBy >= 0 when pinned SHA is HEAD (allows for push during test)", async () => {
+    const ref = await resolveRef(TEST_OWNER, TEST_REPO, "main");
+    if (!ref) return; // no auth
+    const { behindBy } = await countBehind(TEST_OWNER, TEST_REPO, "main", ref.oid, 10);
+    // HEAD could have advanced by 1 between resolveRef calls — allow small drift
+    expect(behindBy).toBeGreaterThanOrEqual(0);
+  });
+
+  test("returns behindBy > 0 when pinned to a known-old SHA", async () => {
+    // aee827e22f75... is HEAD~5 — should be at least 5 commits behind main
+    let result: Awaited<ReturnType<typeof countBehind>>;
+    try {
+      result = await countBehind(
+        TEST_OWNER,
+        TEST_REPO,
+        "main",
+        "aee827e22f7586f0c7c98ca3dd27b94ae4c1b1cf",
+        20,
+      );
+    } catch {
+      return;
+    }
+    if (result.behindBy === -1) return; // SHA not reachable within limit
+    expect(result.behindBy).toBeGreaterThanOrEqual(5);
+    expect(result.commits.length).toBeGreaterThan(0);
+    if (result.commits[0]) {
+      expect(result.commits[0].sha7).toHaveLength(7);
+    }
+  });
+
+  test("returns behindBy=-1 for an unknown pinned SHA", async () => {
+    let result: Awaited<ReturnType<typeof countBehind>>;
+    try {
+      result = await countBehind(
+        TEST_OWNER,
+        TEST_REPO,
+        "main",
+        "0000000000000000000000000000000000000000",
+        10,
+      );
+    } catch {
+      return;
+    }
+    expect(result.behindBy).toBe(-1);
+    expect(result.commits).toEqual([]);
   });
 });
