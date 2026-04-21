@@ -3,7 +3,8 @@ import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
 import { classifyError, getOctokit } from "./github-client.js";
 import { errorRespond, jsonRespond, mkError } from "./json.js";
-import { FormatSchema, RepoRefSchema } from "./schemas.js";
+import { FormatSchema, MaxLogLinesSchema, RepoRefSchema } from "./schemas.js";
+import { tailTruncate } from "./utils.js";
 
 interface FailedStep {
   name: string;
@@ -26,13 +27,6 @@ interface DiagnosisResult {
   failedJobs: FailedJob[];
 }
 
-/** Tail-truncate: keep the LAST maxLines (failures are at the bottom). */
-function tailTruncate(text: string, maxLines: number): string {
-  const lines = text.split("\n");
-  if (lines.length <= maxLines) return text;
-  return `... [${lines.length - maxLines} lines above truncated]\n${lines.slice(-maxLines).join("\n")}`;
-}
-
 export function registerCiDiagnosisTool(server: FastMCP): void {
   server.addTool({
     name: "ci_diagnosis",
@@ -49,14 +43,7 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
         .optional()
         .describe("PR number; finds runs for its head SHA."),
       runId: z.number().int().positive().optional().describe("Exact run ID to fetch."),
-      maxLogLines: z
-        .number()
-        .int()
-        .min(10)
-        .max(500)
-        .optional()
-        .default(50)
-        .describe("Max lines per job log tail."),
+      maxLogLines: MaxLogLinesSchema.describe("Max lines per job log tail."),
       grepLog: z
         .string()
         .optional()

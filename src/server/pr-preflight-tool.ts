@@ -8,7 +8,8 @@ import {
   resolveLocalRepoRemote,
 } from "./github-client.js";
 import { errorRespond, jsonRespond, mkError } from "./json.js";
-import { FormatSchema } from "./schemas.js";
+import { FormatSchema, MaxLogLinesSchema } from "./schemas.js";
+import { tailTruncate } from "./utils.js";
 
 interface ReviewNode {
   author: { login: string };
@@ -256,13 +257,6 @@ async function checkOnePR(
 // Optional CI log fetching (3f: combined PR-status + diagnosis)
 // ---------------------------------------------------------------------------
 
-/** Tail-truncate: keep the LAST maxLines. */
-function tailTruncate(text: string, maxLines: number): string {
-  const lines = text.split("\n");
-  if (lines.length <= maxLines) return text;
-  return `... [${lines.length - maxLines} lines above truncated]\n${lines.slice(-maxLines).join("\n")}`;
-}
-
 interface FailingJobLog {
   job: string;
   log: string;
@@ -359,14 +353,9 @@ export function registerPrPreflightTool(server: FastMCP): void {
         .describe(
           "When true, fetches truncated CI logs for any failing jobs — combining preflight + diagnosis in one call.",
         ),
-      maxLogLines: z
-        .number()
-        .int()
-        .min(10)
-        .max(500)
-        .optional()
-        .default(50)
-        .describe("Max log lines per failing job when includeLogs is true."),
+      maxLogLines: MaxLogLinesSchema.describe(
+        "Max log lines per failing job when includeLogs is true.",
+      ),
       format: FormatSchema,
     }),
     execute: async (args) => {

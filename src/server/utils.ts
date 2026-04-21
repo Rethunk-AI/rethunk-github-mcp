@@ -34,3 +34,13 @@ export function extractFirstPR(message: string): number | undefined {
   const n = Number.parseInt(m[1], 10);
   return Number.isNaN(n) ? undefined : n;
 }
+
+/**
+ * Tail-truncate: keep the LAST `maxLines` of `text`.
+ * Used when fetching CI logs where failures appear at the bottom.
+ */
+export function tailTruncate(text: string, maxLines: number): string {
+  const lines = text.split("\n");
+  if (lines.length <= maxLines) return text;
+  return `... [${lines.length - maxLines} lines above truncated]\n${lines.slice(-maxLines).join("\n")}`;
+}
