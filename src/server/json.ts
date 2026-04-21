@@ -4,15 +4,19 @@ import { fileURLToPath } from "node:url";
 
 export const MCP_JSON_FORMAT_VERSION = "2" as const;
 
+let _cachedVersion: string | undefined;
+
 export function readPackageVersion(): string {
+  if (_cachedVersion !== undefined) return _cachedVersion;
   const here = dirname(fileURLToPath(import.meta.url));
   const pkgPath = join(here, "..", "..", "package.json");
   try {
     const j = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: string };
-    return j.version ?? "0.0.0";
+    _cachedVersion = j.version ?? "0.0.0";
   } catch {
-    return "0.0.0";
+    _cachedVersion = "0.0.0";
   }
+  return _cachedVersion;
 }
 
 /** FastMCP types require major.minor.patch; strip prerelease suffixes from package.json. */
