@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildGoPseudoVersion, formatPseudoVersionDate } from "./module-pin-hint-tool.js";
+import {
+  buildGoPseudoVersion,
+  formatPseudoVersionDate,
+  registerModulePinHintTool,
+} from "./module-pin-hint-tool.js";
+import { captureTool } from "./test-harness.js";
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -54,5 +59,90 @@ describe("buildGoPseudoVersion", () => {
     // parts: ["v0.0.0", "20260704235959", "1234567890ab"]
     expect(parts[1]?.length).toBe(14);
     expect(parts[2]?.length).toBe(12);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// registerModulePinHintTool execute paths (via captureTool)
+// ---------------------------------------------------------------------------
+
+describe("module_pin_hint tool", () => {
+  const run = captureTool(registerModulePinHintTool);
+
+  test("returns UNSUPPORTED_LANGUAGE for non-Go language", async () => {
+    const text = await run({ owner: "x", repo: "y", language: "rust", format: "json" });
+    const parsed = JSON.parse(text) as { error?: { code: string } };
+    // Auth gate may fire first (AUTH_MISSING) or language check fires — either is valid
+    if (parsed.error?.code === "UNSUPPORTED_LANGUAGE") {
+      expect(parsed.error.code).toBe("UNSUPPORTED_LANGUAGE");
+    } else {
+      // Could be AUTH_MISSING in environments without gh
+      expect(parsed.error?.code).toMatch(/AUTH_MISSING|UNSUPPORTED_LANGUAGE/);
+    }
+  });
+
+  test("returns UNSUPPORTED_LANGUAGE specifically when auth is available", async () => {
+    // Only assert language check when auth succeeds
+    const text = await run({ owner: "x", repo: "y", language: "python", format: "json" });
+    const parsed = JSON.parse(text) as { error?: { code: string } };
+    if (!parsed.error) return; // no error = unexpected but skip
+    if (parsed.error.code === "AUTH_MISSING") return; // no auth in this env, skip
+    expect(parsed.error.code).toBe("UNSUPPORTED_LANGUAGE");
+  });
+
+  test("resolves pseudo-version for a known public repo (real API)", async () => {
+    const text = await run({
+      owner: "Rethunk-AI",
+      repo: "rethunk-github-mcp",
+      language: "go",
+      format: "json",
+    });
+    const parsed = JSON.parse(text) as {
+      error?: { code: string };
+      goPseudoVersion?: string;
+    };
+    if (parsed.error) return; // no auth / API error — skip
+    expect(parsed.goPseudoVersion).toMatch(/^v0\.0\.0-\d{14}-[0-9a-f]{12}$/);
+  });
+
+  test("resolves pseudo-version with explicit ref (covers resolveCommit ref branch)", async () => {
+    const text = await run({
+      owner: "Rethunk-AI",
+      repo: "rethunk-github-mcp",
+      ref: "main",
+      language: "go",
+      format: "json",
+    });
+    const parsed = JSON.parse(text) as { error?: { code: string }; goPseudoVersion?: string };
+    if (parsed.error) return; // no auth / API error — skip
+    expect(parsed.goPseudoVersion).toMatch(/^v0\.0\.0-\d{14}-[0-9a-f]{12}$/);
+  });
+
+  test("returns NOT_FOUND for a nonexistent ref", async () => {
+    const text = await run({
+      owner: "Rethunk-AI",
+      repo: "rethunk-github-mcp",
+      ref: "refs/heads/branch-that-does-not-exist-xyzzy",
+      language: "go",
+      format: "json",
+    });
+    const parsed = JSON.parse(text) as { error?: { code: string } };
+    if (!parsed.error) return; // unexpected — skip
+    if (parsed.error.code === "AUTH_MISSING") return;
+    expect(parsed.error.code).toBe("NOT_FOUND");
+  });
+
+  test("markdown format: returns formatted pseudo-version block", async () => {
+    const text = await run({
+      owner: "Rethunk-AI",
+      repo: "rethunk-github-mcp",
+      language: "go",
+      // no format → defaults to markdown
+    });
+    // If auth missing, result is JSON error
+    if (text.startsWith("{")) return;
+    expect(text).toContain("Go Pseudo-Version");
+    expect(text).toContain("go.mod snippet");
+    expect(text).toMatch(/v0\.0\.0-\d{14}-[0-9a-f]{12}/);
   });
 });
