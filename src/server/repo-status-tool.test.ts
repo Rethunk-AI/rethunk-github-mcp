@@ -70,4 +70,73 @@ describe("repo_status tool (captureTool)", () => {
     if (text.startsWith("{")) return;
     expect(text).toContain("LOCAL_REPO_NO_REMOTE");
   });
+
+  test("real localPath: exercises getLocalGitState and API path", async () => {
+    // process.cwd() is a valid git repo with a GitHub origin — exercises getLocalGitState
+    const run = captureTool(registerRepoStatusTool);
+    const text = await run({ repos: [{ localPath: process.cwd() }], format: "json" });
+    const parsed = JSON.parse(text) as {
+      repos?: Array<{
+        owner?: string;
+        repo?: string;
+        error?: { code: string };
+        local?: { branch: string; dirty: number; ahead: number; behind: number };
+      }>;
+    };
+    if (!parsed.repos) return; // no auth
+    const entry = parsed.repos[0];
+    if (!entry || entry.error) return; // API error (permissions, etc.)
+    // Local git state should be populated
+    if (entry.local) {
+      expect(typeof entry.local.branch).toBe("string");
+      expect(entry.local.branch.length).toBeGreaterThan(0);
+      expect(typeof entry.local.dirty).toBe("number");
+      expect(typeof entry.local.ahead).toBe("number");
+      expect(typeof entry.local.behind).toBe("number");
+    }
+    expect(entry.owner).toBe("Rethunk-AI");
+    expect(entry.repo).toBe("rethunk-github-mcp");
+  });
+
+  test("direct owner+repo: JSON format — exercises else branch and API result handling", async () => {
+    const run = captureTool(registerRepoStatusTool);
+    const text = await run({
+      repos: [{ owner: "Rethunk-AI", repo: "rethunk-github-mcp" }],
+      format: "json",
+    });
+    const parsed = JSON.parse(text) as {
+      repos?: Array<{
+        owner?: string;
+        repo?: string;
+        defaultBranch?: string;
+        latestCommit?: { sha7: string };
+        error?: { code: string };
+      }>;
+    };
+    if (!parsed.repos) return; // no auth
+    const entry = parsed.repos[0];
+    if (!entry || entry.error) return; // API error — skip
+    expect(entry.owner).toBe("Rethunk-AI");
+    expect(entry.repo).toBe("rethunk-github-mcp");
+    expect(typeof entry.defaultBranch).toBe("string");
+    if (entry.latestCommit) {
+      expect(entry.latestCommit.sha7).toHaveLength(7);
+    }
+  });
+
+  test("direct owner+repo: markdown format — covers markdown rendering path", async () => {
+    const run = captureTool(registerRepoStatusTool);
+    const text = await run({
+      repos: [{ owner: "Rethunk-AI", repo: "rethunk-github-mcp" }],
+      // default format is markdown
+    });
+    // If auth is absent, result is JSON error — skip gracefully
+    if (text.startsWith("{")) return;
+    // Always starts with the repo heading regardless of success/error
+    expect(text).toContain("## Rethunk-AI/rethunk-github-mcp");
+    // If API succeeded, PR counts are present
+    if (!text.includes("Error (")) {
+      expect(text).toContain("PRs:");
+    }
+  });
 });
