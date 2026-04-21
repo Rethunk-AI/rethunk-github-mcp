@@ -100,14 +100,31 @@ async function fetchHeadCI(
   }
 }
 
+/** Fetch the latest semver tag (vX.Y.Z) for a repo. Returns undefined if none found. */
+async function fetchLatestSemverTag(owner: string, repo: string): Promise<string | undefined> {
+  const octokit = getOctokit();
+  try {
+    const res = await octokit.repos.listTags({ owner, repo, per_page: 20 });
+    const semverRe = /^v?\d+\.\d+\.\d+$/;
+    const tags = res.data.filter((t) => semverRe.test(t.name));
+    return tags[0]?.name;
+  } catch {
+    return undefined;
+  }
+}
+
 export function registerReleaseReadinessTool(server: FastMCP): void {
   server.addTool({
     name: "release_readiness",
     description:
-      "Unreleased-commit scope report: compares base..head, lists commits with PRs, CI status on head, and diff stats.",
+      "Unreleased-commit scope report: compares base..head, lists commits with PRs, CI status on head, and diff stats. " +
+      "Omit `base` to auto-pick the latest semver tag.",
     annotations: { readOnlyHint: true },
     parameters: RepoRefSchema.extend({
-      base: z.string().describe("Base ref (tag/branch, e.g. 'v1.2.0')."),
+      base: z
+        .string()
+        .optional()
+        .describe("Base ref (tag/branch). Omit to auto-pick the latest semver tag."),
       head: z.string().optional().describe("Head ref; defaults to default branch."),
       maxCommits: z.number().int().min(1).max(200).optional().default(50),
       format: FormatSchema,
