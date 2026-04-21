@@ -37,25 +37,30 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
   server.addTool({
     name: "ci_diagnosis",
     description:
-      "Diagnose CI failures: finds the relevant workflow run, extracts failed job " +
-      "logs (truncated), and shows the trigger commit. Answers 'why is CI red?' " +
-      "without navigating the Actions UI.",
+      "Diagnose CI failures: fetches the relevant workflow run, extracts failed job logs, shows trigger commit. " +
+      "Pass runId, prNumber, or ref to target a specific run.",
     annotations: { readOnlyHint: true },
     parameters: RepoRefSchema.extend({
-      ref: z.string().optional().describe("Branch name or SHA. Used to find the latest run."),
+      ref: z.string().optional().describe("Branch or SHA to find the latest run."),
       prNumber: z
         .number()
         .int()
         .positive()
         .optional()
-        .describe("PR number. Finds runs for the PR head."),
-      runId: z
+        .describe("PR number; finds runs for its head SHA."),
+      runId: z.number().int().positive().optional().describe("Exact run ID to fetch."),
+      maxLogLines: z
         .number()
         .int()
-        .positive()
+        .min(10)
+        .max(500)
         .optional()
-        .describe("Specific workflow run ID to diagnose."),
-      maxLogLines: z.number().int().min(10).max(500).optional().default(150),
+        .default(50)
+        .describe("Max lines per job log tail."),
+      grepLog: z
+        .string()
+        .optional()
+        .describe("Regex applied to each log; only matching lines are returned."),
       format: FormatSchema,
     }),
     execute: async (args) => {
@@ -67,7 +72,6 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
       try {
         const octokit = getOctokit();
 
-        // --- Resolve the workflow run ---
         type WorkflowRun = Awaited<ReturnType<typeof octokit.actions.getWorkflowRun>>["data"];
         let run: WorkflowRun | undefined;
 
@@ -116,7 +120,6 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
           );
         }
 
-        // --- Get jobs ---
         const jobsRes = await octokit.actions.listJobsForWorkflowRun({
           owner,
           repo,
@@ -128,7 +131,8 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
         const failed = allJobs.filter((j) => j.conclusion === "failure");
         const jobsToAnalyze = failed.length > 0 ? failed : allJobs;
 
-        // --- Fetch logs for each job ---
+        const grepRe = args.grepLog ? new RegExp(args.grepLog, "i") : undefined;
+
         const failedJobs: FailedJob[] = [];
         for (const job of jobsToAnalyze) {
           let logText = "[logs unavailable]";
@@ -138,7 +142,14 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
               repo,
               job_id: job.id,
             });
-            logText = tailTruncate(String(logRes.data), args.maxLogLines);
+            let raw = String(logRes.data);
+            if (grepRe) {
+              raw = raw
+                .split("\n")
+                .filter((l) => grepRe.test(l))
+                .join("\n");
+            }
+            logText = tailTruncate(raw, args.maxLogLines);
           } catch {
             // logs expired or unavailable
           }
@@ -165,7 +176,6 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
 
         if (args.format === "json") return jsonRespond(result);
 
-        // Markdown
         const lines: string[] = [
           `# CI Diagnosis: ${owner}/${repo}`,
           "",
