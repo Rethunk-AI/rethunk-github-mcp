@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const FormatSchema = z.enum(["markdown", "json"]).optional().default("markdown");
+export const FormatSchema = z.enum(["markdown", "json"]).optional().default("json");
 
 export const RepoRefSchema = z.object({
   owner: z.string().describe("GitHub owner or organization."),
