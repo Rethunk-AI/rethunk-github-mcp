@@ -85,6 +85,13 @@ export function errorRespond(envelope: McpErrorEnvelope): string {
   return jsonRespond({ error: envelope });
 }
 
+/** Standard error for a local path whose git `origin` doesn't resolve to GitHub. */
+export function mkLocalRepoNoRemote(path: string): McpErrorEnvelope {
+  return mkError("LOCAL_REPO_NO_REMOTE", `No GitHub origin found for local path ${path}`, {
+    suggestedFix: "Ensure the path is a git clone with a GitHub `origin` remote.",
+  });
+}
+
 /** Spread into an object literal only when `cond` is true; otherwise `{}`. */
 function spreadWhen<T extends Record<string, unknown>>(
   cond: boolean,
