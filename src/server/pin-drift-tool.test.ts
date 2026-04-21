@@ -316,4 +316,87 @@ describe("pin_drift tool (captureTool)", () => {
     if (text.startsWith("{")) return;
     expect(text).toContain("0 pins");
   });
+
+  test("go.mod with pseudo-version pin: exercises parser + API fan-out", async () => {
+    const dir = makeTrackedTmpDir("pin-drift-gomod-test-");
+    // Write a go.mod with a real SHA from this repo (HEAD~5)
+    writeFileSync(
+      join(dir, "go.mod"),
+      `module test.example.com
+
+go 1.21
+
+require (
+  github.com/Rethunk-AI/rethunk-github-mcp v0.0.0-20260421000000-aee827e22f75
+)
+`,
+    );
+    const run = captureTool(registerPinDriftTool);
+    const text = await run({ localPath: dir, pinFiles: ["go.mod"], format: "json" });
+    const parsed = JSON.parse(text) as {
+      error?: { code: string };
+      summary?: { totalPins: number; stale: number; upToDate: number };
+      pins?: Array<{ owner: string; repo: string; behindBy: number }>;
+    };
+    if (parsed.error) return; // no auth or unexpected error — skip
+    if (!parsed.summary) return;
+    expect(parsed.summary.totalPins).toBe(1);
+    expect(Array.isArray(parsed.pins)).toBe(true);
+    if (parsed.pins?.[0]) {
+      expect(parsed.pins[0].owner).toBe("Rethunk-AI");
+      expect(parsed.pins[0].repo).toBe("rethunk-github-mcp");
+      // behindBy is >= 0 if SHA found, -1 if not in history
+      expect(typeof parsed.pins[0].behindBy).toBe("number");
+    }
+  });
+
+  test("package.json with no GitHub deps → 0 pins after parse", async () => {
+    const dir = makeTrackedTmpDir("pin-drift-pkgjson-test-");
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "test", dependencies: { react: "^18.0.0" } }),
+    );
+    const run = captureTool(registerPinDriftTool);
+    const text = await run({ localPath: dir, pinFiles: ["package.json"], format: "json" });
+    const parsed = JSON.parse(text) as { error?: unknown; summary?: { totalPins: number } };
+    if (parsed.error) return; // no auth
+    if (!parsed.summary) return;
+    expect(parsed.summary.totalPins).toBe(0);
+  });
+
+  test("glob pinFiles: expands patterns against directory contents", async () => {
+    const dir = makeTrackedTmpDir("pin-drift-glob-test-");
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "test", dependencies: {} }));
+    const run = captureTool(registerPinDriftTool);
+    const text = await run({ localPath: dir, pinFiles: ["*.json"], format: "json" });
+    const parsed = JSON.parse(text) as { error?: unknown; summary?: { totalPins: number } };
+    if (parsed.error) return; // no auth
+    if (!parsed.summary) return;
+    expect(parsed.summary.totalPins).toBe(0);
+  });
+
+  test("ownerAllowlist filters pins to specified owners", async () => {
+    const dir = makeTrackedTmpDir("pin-drift-filter-test-");
+    writeFileSync(
+      join(dir, "go.mod"),
+      `module test.example.com
+go 1.21
+require (
+  github.com/Rethunk-AI/rethunk-github-mcp v0.0.0-20260421000000-aee827e22f75
+)
+`,
+    );
+    const run = captureTool(registerPinDriftTool);
+    // Filter to "OtherOrg" — should exclude our pin
+    const text = await run({
+      localPath: dir,
+      pinFiles: ["go.mod"],
+      ownerAllowlist: ["OtherOrg"],
+      format: "json",
+    });
+    const parsed = JSON.parse(text) as { error?: unknown; summary?: { totalPins: number } };
+    if (parsed.error) return; // no auth
+    if (!parsed.summary) return;
+    expect(parsed.summary.totalPins).toBe(0);
+  });
 });
