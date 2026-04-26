@@ -16,7 +16,7 @@ import {
   mkLocalRepoNoRemote,
   truncateText,
 } from "./json.js";
-import { FormatSchema, LocalOrRemoteRepoSchema } from "./schemas.js";
+import { FormatSchema, LocalOrRemoteRepoSchema, MAX_REPOS_PER_REQUEST } from "./schemas.js";
 import { type CheckNode, normalizeFailedChecks, timeAgo } from "./utils.js";
 
 interface RepoQueryResult {
@@ -124,11 +124,14 @@ query DraftCount($q: String!) {
 export function registerRepoStatusTool(server: FastMCP): void {
   server.addTool({
     name: "repo_status",
-    description:
-      "Multi-repo dashboard: HEAD commit, CI status, open PR/issue counts. Accepts up to 20 repos; include `localPath` for local git state.",
+    description: `Multi-repo dashboard: HEAD commit, CI status, open PR/issue counts. Accepts up to ${MAX_REPOS_PER_REQUEST} repos; include \`localPath\` for local git state.`,
     annotations: { readOnlyHint: true },
     parameters: z.object({
-      repos: z.array(LocalOrRemoteRepoSchema).min(1).max(20).describe("Repos to query."),
+      repos: z
+        .array(LocalOrRemoteRepoSchema)
+        .min(1)
+        .max(MAX_REPOS_PER_REQUEST)
+        .describe("Repos to query."),
       format: FormatSchema,
     }),
     execute: async (args) => {

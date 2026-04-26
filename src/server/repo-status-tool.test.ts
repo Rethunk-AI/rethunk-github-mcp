@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { registerRepoStatusTool } from "./repo-status-tool.js";
+import { MAX_REPOS_PER_REQUEST } from "./schemas.js";
 import { captureTool } from "./test-harness.js";
 import { timeAgo } from "./utils.js";
 
@@ -51,6 +52,20 @@ describe("timeAgo", () => {
 // ---------------------------------------------------------------------------
 
 describe("repo_status tool (captureTool)", () => {
+  test(`batch size above legacy 20: ${MAX_REPOS_PER_REQUEST} localPath entries accepted`, async () => {
+    const run = captureTool(registerRepoStatusTool);
+    const repos = Array.from({ length: MAX_REPOS_PER_REQUEST }, () => ({
+      localPath: "/tmp",
+    }));
+    const text = await run({ repos, format: "json" });
+    const parsed = JSON.parse(text) as {
+      repos?: Array<{ error?: { code: string } }>;
+    };
+    if (!parsed.repos) return; // no auth
+    expect(parsed.repos).toHaveLength(MAX_REPOS_PER_REQUEST);
+    expect(parsed.repos[0]?.error?.code).toBe("LOCAL_REPO_NO_REMOTE");
+  });
+
   test("LOCAL_REPO_NO_REMOTE: JSON format", async () => {
     const run = captureTool(registerRepoStatusTool);
     const text = await run({ repos: [{ localPath: "/tmp" }], format: "json" });

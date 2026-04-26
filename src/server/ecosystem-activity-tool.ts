@@ -14,7 +14,7 @@ import {
   mkLocalRepoNoRemote,
   truncateText,
 } from "./json.js";
-import { FormatSchema, LocalOrRemoteRepoSchema } from "./schemas.js";
+import { FormatSchema, LocalOrRemoteRepoSchema, MAX_REPOS_PER_REQUEST } from "./schemas.js";
 import { extractFirstPR, parseSince } from "./utils.js";
 
 // ---------------------------------------------------------------------------
@@ -149,8 +149,10 @@ export function registerEcosystemActivityTool(server: FastMCP): void {
       repos: z
         .array(LocalOrRemoteRepoSchema)
         .min(1)
-        .max(20)
-        .describe("1–20 repos. Each is { owner, repo } or { localPath }."),
+        .max(MAX_REPOS_PER_REQUEST)
+        .describe(
+          `1–${MAX_REPOS_PER_REQUEST} repos. Each is { owner, repo } or { localPath }. GitHub may throttle very large batches.`,
+        ),
       since: z.string().describe("ISO8601 or relative duration (e.g. '48h', '7d')."),
       paths: z.array(z.string()).optional().describe("Limit to commits touching these paths."),
       grep: z.string().optional().describe("Client-side regex filter on commit subjects."),

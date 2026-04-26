@@ -11,7 +11,7 @@ MCP clients expose tools as `{serverName}_{toolName}`. With the server registere
 
 | Short id | Client id (server `rethunk-github`) | Purpose |
 |----------|--------------------------------------|---------|
-| `repo_status` | `rethunk-github_repo_status` | Multi-repo dashboard: default branch HEAD, CI, open PRs/issues, latest commit. Up to 20 repos per call, optional local git state. |
+| `repo_status` | `rethunk-github_repo_status` | Multi-repo dashboard: default branch HEAD, CI, open PRs/issues, latest commit. Up to 64 repos per call, optional local git state. Very large batches may hit GitHub rate limits; concurrency stays at 4. |
 | `my_work` | `rethunk-github_my_work` | Cross-repo personal queue: authored PRs, review requests, assigned issues. `blockedOnMe` lens for action items. |
 | `pr_preflight` | `rethunk-github_pr_preflight` | Pre-merge safety check: mergeable, reviews, CI, behind-base, computed `safe` verdict with reasons. Batch-capable via `numbers[]`. |
 | `release_readiness` | `rethunk-github_release_readiness` | What would ship if we release now? Unreleased commits, associated PRs, CI on head, diff stats. Auto-picks latest semver tag as base. |
@@ -81,7 +81,7 @@ Future write-capable tools (e.g. a proposed `release_create`) will document thei
 
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `repos` | `(RepoRef \| LocalPath)[]` | yes | — | 1–20 repos. Each is `{ owner, repo }` or `{ localPath }`. |
+| `repos` | `(RepoRef \| LocalPath)[]` | yes | — | 1–64 repos. Each is `{ owner, repo }` or `{ localPath }`. |
 | `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
 **JSON output:**
@@ -353,7 +353,7 @@ The `attention` array is sorted by urgency: failing CI repos first, then by stal
 
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `repos` | `(RepoRef \| LocalPath)[]` | yes | — | 1–20 repos. Each is `{ owner, repo }` or `{ localPath }`. |
+| `repos` | `(RepoRef \| LocalPath)[]` | yes | — | 1–64 repos. Each is `{ owner, repo }` or `{ localPath }`. |
 | `since` | `string` | yes | — | ISO8601 timestamp or relative duration: `"48h"`, `"7d"`. |
 | `paths` | `string[]` | no | — | Filter to commits touching these paths (applied per repo via GraphQL `history(path:...)`). Multiple paths are OR'd together. |
 | `grep` | `string` | no | — | Regex filter applied client-side to commit message subjects. |

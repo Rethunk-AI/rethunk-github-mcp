@@ -12,7 +12,7 @@
 
 | Tool | What it does |
 |------|-------------|
-| **`repo_status`** | Multi-repo dashboard: branch HEAD, CI, PRs, issues, latest commit — up to 20 repos in one call |
+| **`repo_status`** | Multi-repo dashboard: branch HEAD, CI, PRs, issues, latest commit — up to 64 repos in one call |
 | **`my_work`** | Cross-repo personal queue: your open PRs, review requests, assigned issues; `blockedOnMe` lens for action items |
 | **`pr_preflight`** | Pre-merge safety check: mergeable, reviews, CI, behind-base, computed `safe` verdict; batch-capable |
 | **`release_readiness`** | What would ship now: unreleased commits, associated PRs, CI on head, diff stats |

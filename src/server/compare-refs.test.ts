@@ -129,8 +129,8 @@ describe("fetchCommitHistory", () => {
     }
     expect(result.defaultBranch).toBe("main");
     expect(Array.isArray(result.commits)).toBe(true);
-    if (result.commits.length > 0) {
-      const c = result.commits[0]!;
+    const c = result.commits[0];
+    if (c) {
       expect(c.sha7).toHaveLength(7);
       expect(typeof c.message).toBe("string");
       expect(typeof c.author).toBe("string");

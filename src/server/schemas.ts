@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+/** Max repos per `repo_status` / `ecosystem_activity` request (aligned with rethunk-git inventory default). */
+export const MAX_REPOS_PER_REQUEST = 64;
+
 export const FormatSchema = z.enum(["markdown", "json"]).optional().default("json");
 
 export const RepoRefSchema = z.object({
