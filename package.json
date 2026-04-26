@@ -1,6 +1,6 @@
 {
   "name": "@rethunk/github-mcp",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "MCP stdio server: high-value GitHub rollup tools for LLMs — multi-repo dashboards, PR preflight, CI diagnosis, and more.",
   "type": "module",
   "private": false,

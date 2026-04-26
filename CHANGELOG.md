@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] — 2026-04-26
+
+### CI
+
+- **`test:coverage`** now enforces the same **80% line coverage** gate locally as CI (instead of only parsing coverage in the workflow).
+- **Release workflow** now runs **`bun run test:coverage`** (with `GITHUB_TOKEN` available to tests), matching the PR CI gate.
+
+### Changed
+
+- **Packaging hygiene**: moved release/coverage helper CLIs under **`scripts/`** so they are not emitted into published **`dist/`**, and excluded **`src/server/test-harness.ts`** from the TypeScript build output.
+
+### Added
+
+- **`release:check`** expands release-time validation (changelog heading for the version, `package.json` ↔ git tag parity when `GITHUB_REF` is set, `files` includes **`dist`**, and rejects obvious test-only artifacts under **`dist/`**).
+- **`ecosystem_activity`** tests covering stable **JSON**/**markdown** shapes for local resolution errors and the **64-repo** batch cap.
+
 ## [1.0.3] — 2026-04-21
 
 ### Changed
