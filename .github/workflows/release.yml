@@ -41,15 +41,8 @@ jobs:
       - name: Unit tests
         run: bun run test
 
-      - name: Verify git tag matches package.json version
-        run: |
-          set -euo pipefail
-          TAG="${GITHUB_REF#refs/tags/v}"
-          PKG=$(node -p "require('./package.json').version")
-          if [ "$TAG" != "$PKG" ]; then
-            echo "::error::Git tag v$TAG must match package.json version $PKG (publish aborted)."
-            exit 1
-          fi
+      - name: Release sanity checks
+        run: bun run release:check
 
       - name: Create tarball for GitHub Release
         id: pack

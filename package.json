@@ -32,7 +32,8 @@
     "check:fix": "biome check --write .",
     "test": "bun test src/",
     "test:coverage": "bun src/coverage-threshold.ts",
-    "prepublishOnly": "bun run build && bun run check && bun run test",
+    "release:check": "bun src/release-sanity.ts",
+    "prepublishOnly": "bun run release:check && bun run build && bun run check && bun run test",
     "setup-hooks": "git config core.hooksPath .githooks"
   },
   "keywords": [
