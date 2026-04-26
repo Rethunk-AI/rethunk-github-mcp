@@ -19,6 +19,17 @@ describe("checkReleaseSanity", () => {
     ).toEqual([]);
   });
 
+  test("rejects invalid package versions before checking release files", () => {
+    expect(
+      checkReleaseSanity({
+        packageJson: { ...BASE_PACKAGE, version: "1.2" },
+        changelog: "",
+        githubRef: "refs/tags/v1.2.3",
+        distFiles: ["coverage-threshold.js"],
+      }),
+    ).toEqual(["package.json version must be a valid semver string."]);
+  });
+
   test("reports mismatched tags and missing changelog entries", () => {
     expect(
       checkReleaseSanity({
@@ -49,5 +60,19 @@ describe("checkReleaseSanity", () => {
         distFiles: ["server.js", "server/test-harness.js"],
       }),
     ).toEqual(["dist must not include test-only artifact server/test-harness.js."]);
+  });
+
+  test("rejects generated dist artifacts for test and release helper files", () => {
+    expect(
+      checkReleaseSanity({
+        packageJson: BASE_PACKAGE,
+        changelog: "## [1.2.3] — 2026-04-26\n",
+        distFiles: ["server.js", "server.test.js", "coverage-threshold.js", "release-sanity.js"],
+      }),
+    ).toEqual([
+      "dist must not include test-only artifact server.test.js.",
+      "dist must not include test-only artifact coverage-threshold.js.",
+      "dist must not include test-only artifact release-sanity.js.",
+    ]);
   });
 });
