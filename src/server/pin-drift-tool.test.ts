@@ -3,7 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { registerPinDriftTool } from "./pin-drift-tool.js";
+import {
+  parseGoMod,
+  parsePackageJson,
+  parseVersionsEnv,
+  registerPinDriftTool,
+} from "./pin-drift-tool.js";
 import { captureTool } from "./test-harness.js";
 
 // ---------------------------------------------------------------------------
@@ -218,6 +223,49 @@ replace github.com/Rethunk-Tech/satcom => github.com/Rethunk-Tech/satcom v0.0.0-
   });
 });
 
+describe("parseGoMod source parser", () => {
+  test("reads real go.mod files and reports pins plus ambiguous replacements", () => {
+    const dir = _makeTmpDir();
+    _writeFile(
+      dir,
+      "go.mod",
+      `
+module example.com/myapp
+
+go 1.21
+
+require (
+  github.com/Rethunk-Tech/satcom v0.0.0-20260401000000-aaaaaaaaaaaa
+)
+
+replace github.com/foo/bar => github.com/Rethunk-AI/bar v1.2.3
+replace github.com/foo/baz => github.com/Rethunk-AI/baz main
+`,
+    );
+
+    const { pins, skipped } = parseGoMod(dir);
+
+    expect(pins).toContainEqual({
+      source: "go.mod",
+      owner: "Rethunk-AI",
+      repo: "bar",
+      pinnedRef: "v1.2.3",
+    });
+    expect(pins).toContainEqual({
+      source: "go.mod",
+      owner: "Rethunk-Tech",
+      repo: "satcom",
+      pinnedRef: "aaaaaaaaaaaa",
+    });
+    expect(skipped).toContainEqual({
+      source: "go.mod",
+      key: "replace github.com/Rethunk-AI/baz",
+      value: "main",
+      reason: "ambiguous_ref",
+    });
+  });
+});
+
 describe("parsePackageJson", () => {
   test("parses GitHub shorthand dep", () => {
     const { pins } = parsePackageJsonFixture(
@@ -256,6 +304,48 @@ describe("parsePackageJson", () => {
   });
 });
 
+describe("parsePackageJson source parser", () => {
+  test("reads dependencies and devDependencies from package.json", () => {
+    const dir = _makeTmpDir();
+    _writeFile(
+      dir,
+      "package.json",
+      JSON.stringify({
+        dependencies: {
+          "short-lib": "owner/repo#abc123def456",
+          npm: "^1.0.0",
+        },
+        devDependencies: {
+          "url-lib": "https://github.com/Rethunk-AI/some-lib.git#877f8d94448e",
+        },
+      }),
+    );
+
+    const { pins, skipped } = parsePackageJson(dir);
+
+    expect(skipped).toEqual([]);
+    expect(pins).toContainEqual({
+      source: "package.json",
+      owner: "owner",
+      repo: "repo",
+      pinnedRef: "abc123def456",
+    });
+    expect(pins).toContainEqual({
+      source: "package.json",
+      owner: "Rethunk-AI",
+      repo: "some-lib",
+      pinnedRef: "877f8d94448e",
+    });
+  });
+
+  test("returns no pins for malformed package.json", () => {
+    const dir = _makeTmpDir();
+    _writeFile(dir, "package.json", "{not json");
+
+    expect(parsePackageJson(dir)).toEqual({ pins: [], skipped: [] });
+  });
+});
+
 describe("parseVersionsEnv", () => {
   test("marks 40-char SHA _REF keys as ambiguous_repo", () => {
     const text = `BASTION_SATCOM_REF=877f8d94448e8cc843e83409dd0a59bb73562e45\n`;
@@ -284,6 +374,30 @@ describe("parseVersionsEnv", () => {
     ].join("\n");
     const { skipped } = parseVersionsEnvFixture(text);
     expect(skipped.length).toBe(2);
+  });
+});
+
+describe("parseVersionsEnv source parser", () => {
+  test("reads SHA-like refs from scripts/versions.env", () => {
+    const dir = _makeTmpDir();
+    _writeFile(
+      dir,
+      "scripts/versions.env",
+      `
+SATCOM_REF=0123456789abcdef0123456789abcdef01234567
+SATCOM_BRANCH=main
+MFA_VERSION=v1.2.3
+`,
+    );
+
+    expect(parseVersionsEnv(dir).skipped).toEqual([
+      {
+        source: "scripts/versions.env",
+        key: "SATCOM_REF",
+        value: "0123456789abcdef0123456789abcdef01234567",
+        reason: "ambiguous_repo",
+      },
+    ]);
   });
 });
 

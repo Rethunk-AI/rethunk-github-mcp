@@ -34,6 +34,35 @@ export function buildGoPseudoVersion(committedDate: string, fullSha: string): st
   return `v0.0.0-${ts}-${sha12}`;
 }
 
+export interface ModulePinHintResult {
+  owner: string;
+  repo: string;
+  ref: string;
+  resolvedSha: string;
+  committerDate: string;
+  goPseudoVersion: string;
+}
+
+export function formatModulePinHintMarkdown(result: ModulePinHintResult): string {
+  return [
+    `# Go Pseudo-Version: ${result.owner}/${result.repo}`,
+    "",
+    `**Ref:** \`${result.ref}\``,
+    `**SHA:** \`${result.resolvedSha}\``,
+    `**Committed:** ${result.committerDate}`,
+    "",
+    "## Pseudo-version",
+    "```",
+    result.goPseudoVersion,
+    "```",
+    "",
+    "## go.mod snippet",
+    "```go",
+    `require github.com/${result.owner}/${result.repo} ${result.goPseudoVersion}`,
+    "```",
+  ].join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // GraphQL
 // ---------------------------------------------------------------------------
@@ -133,7 +162,7 @@ export function registerModulePinHintTool(server: FastMCP): void {
 
         const goPseudoVersion = buildGoPseudoVersion(commit.committedDate, commit.oid);
 
-        const result = {
+        const result: ModulePinHintResult = {
           owner,
           repo,
           ref: commit.resolvedRef,
@@ -144,26 +173,7 @@ export function registerModulePinHintTool(server: FastMCP): void {
 
         if (args.format === "json") return jsonRespond(result);
 
-        // Markdown
-        const lines = [
-          `# Go Pseudo-Version: ${owner}/${repo}`,
-          "",
-          `**Ref:** \`${commit.resolvedRef}\``,
-          `**SHA:** \`${commit.oid}\``,
-          `**Committed:** ${commit.committedDate}`,
-          "",
-          "## Pseudo-version",
-          "```",
-          goPseudoVersion,
-          "```",
-          "",
-          "## go.mod snippet",
-          "```go",
-          `require github.com/${owner}/${repo} ${goPseudoVersion}`,
-          "```",
-        ];
-
-        return lines.join("\n");
+        return formatModulePinHintMarkdown(result);
       } catch (err) {
         return errorRespond(classifyError(err));
       }

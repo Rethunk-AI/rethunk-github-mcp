@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildGoPseudoVersion,
+  formatModulePinHintMarkdown,
   formatPseudoVersionDate,
   registerModulePinHintTool,
 } from "./module-pin-hint-tool.js";
@@ -59,6 +60,26 @@ describe("buildGoPseudoVersion", () => {
     // parts: ["v0.0.0", "20260704235959", "1234567890ab"]
     expect(parts[1]?.length).toBe(14);
     expect(parts[2]?.length).toBe(12);
+  });
+});
+
+describe("formatModulePinHintMarkdown", () => {
+  test("renders the pseudo-version and go.mod snippet", () => {
+    const text = formatModulePinHintMarkdown({
+      owner: "Rethunk-AI",
+      repo: "rethunk-github-mcp",
+      ref: "main",
+      resolvedSha: "0123456789abcdef0123456789abcdef01234567",
+      committerDate: "2026-04-26T20:00:00Z",
+      goPseudoVersion: "v0.0.0-20260426200000-0123456789ab",
+    });
+
+    expect(text).toContain("# Go Pseudo-Version: Rethunk-AI/rethunk-github-mcp");
+    expect(text).toContain("**Ref:** `main`");
+    expect(text).toContain("**SHA:** `0123456789abcdef0123456789abcdef01234567`");
+    expect(text).toContain(
+      "require github.com/Rethunk-AI/rethunk-github-mcp v0.0.0-20260426200000-0123456789ab",
+    );
   });
 });
 

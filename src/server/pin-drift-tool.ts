@@ -14,7 +14,7 @@ import { FormatSchema } from "./schemas.js";
 // Types
 // ---------------------------------------------------------------------------
 
-type PinSource = "go.mod" | ".gitmodules" | "scripts/versions.env" | "package.json";
+export type PinSource = "go.mod" | ".gitmodules" | "scripts/versions.env" | "package.json";
 
 interface PinEntry {
   source: PinSource;
@@ -32,7 +32,7 @@ interface PinEntry {
   error?: McpErrorEnvelope;
 }
 
-interface SkippedEntry {
+export interface SkippedEntry {
   source: PinSource;
   key: string;
   value: string;
@@ -65,7 +65,7 @@ export function pseudoVersionSha(version: string): string | undefined {
   return m?.[1];
 }
 
-interface RawPin {
+export interface RawPin {
   source: PinSource;
   owner: string;
   repo: string;
@@ -73,7 +73,7 @@ interface RawPin {
 }
 
 /** Parse go.mod for replace directives and pseudo-version requires pointing at GitHub. */
-function parseGoMod(localPath: string): { pins: RawPin[]; skipped: SkippedEntry[] } {
+export function parseGoMod(localPath: string): { pins: RawPin[]; skipped: SkippedEntry[] } {
   const goModPath = join(localPath, "go.mod");
   if (!existsSync(goModPath)) return { pins: [], skipped: [] };
 
@@ -196,7 +196,7 @@ function parseGitModules(localPath: string): { pins: RawPin[]; skipped: SkippedE
 }
 
 /** Parse scripts/versions.env for KEY=VALUE lines where value is a 40-char hex SHA. */
-function parseVersionsEnv(localPath: string): { skipped: SkippedEntry[] } {
+export function parseVersionsEnv(localPath: string): { skipped: SkippedEntry[] } {
   const envPath = join(localPath, "scripts", "versions.env");
   if (!existsSync(envPath)) return { skipped: [] };
 
@@ -223,7 +223,7 @@ function parseVersionsEnv(localPath: string): { skipped: SkippedEntry[] } {
 }
 
 /** Parse package.json for dependencies pinned to GitHub URLs. */
-function parsePackageJson(localPath: string): { pins: RawPin[]; skipped: SkippedEntry[] } {
+export function parsePackageJson(localPath: string): { pins: RawPin[]; skipped: SkippedEntry[] } {
   const pkgPath = join(localPath, "package.json");
   if (!existsSync(pkgPath)) return { pins: [], skipped: [] };
 

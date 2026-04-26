@@ -38,7 +38,7 @@ interface RepoQueryResult {
   };
 }
 
-interface RepoResult {
+export interface RepoResult {
   owner: string;
   repo: string;
   defaultBranch?: string;
@@ -85,6 +85,38 @@ function getLocalGitState(localPath: string): RepoResult["local"] | undefined {
   } catch {
     return undefined;
   }
+}
+
+export function formatRepoStatusMarkdown(results: RepoResult[]): string {
+  return results
+    .map((r) => {
+      if (r.error) return `## ${r.owner}/${r.repo}\nError (${r.error.code}): ${r.error.message}`;
+      const lines: string[] = [];
+      lines.push(`## ${r.owner}/${r.repo} (${r.defaultBranch ?? "?"})`);
+      if (r.latestCommit) {
+        lines.push(
+          `Latest: \`${r.latestCommit.sha7}\` ${r.latestCommit.message}` +
+            ` — ${r.latestCommit.author}, ${r.latestCommit.date}`,
+        );
+      }
+      if (r.ci) {
+        const state = r.ci.status === "success" ? "passing" : "failing";
+        const extra = r.ci.failedChecks?.map((c) => c.name).join(", ");
+        lines.push(`CI: ${state}${extra ? `: ${extra}` : ""}`);
+      } else {
+        lines.push("CI: not configured");
+      }
+      const draft = r.draftPRs ? ` (${r.draftPRs} draft)` : "";
+      lines.push(`PRs: ${r.openPRs ?? 0} open${draft} · Issues: ${r.openIssues ?? 0} open`);
+      if (r.local) {
+        lines.push(
+          `[Local: ${r.local.branch}, ${r.local.dirty} dirty, ` +
+            `${r.local.ahead} ahead / ${r.local.behind} behind]`,
+        );
+      }
+      return lines.join("\n");
+    })
+    .join("\n\n");
 }
 
 const REPO_STATUS_QUERY = `
@@ -203,38 +235,7 @@ export function registerRepoStatusTool(server: FastMCP): void {
 
       if (args.format === "json") return jsonRespond({ repos: results });
 
-      const md = results
-        .map((r) => {
-          if (r.error)
-            return `## ${r.owner}/${r.repo}\nError (${r.error.code}): ${r.error.message}`;
-          const lines: string[] = [];
-          lines.push(`## ${r.owner}/${r.repo} (${r.defaultBranch ?? "?"})`);
-          if (r.latestCommit) {
-            lines.push(
-              `Latest: \`${r.latestCommit.sha7}\` ${r.latestCommit.message}` +
-                ` — ${r.latestCommit.author}, ${r.latestCommit.date}`,
-            );
-          }
-          if (r.ci) {
-            const state = r.ci.status === "success" ? "passing" : "failing";
-            const extra = r.ci.failedChecks?.map((c) => c.name).join(", ");
-            lines.push(`CI: ${state}${extra ? `: ${extra}` : ""}`);
-          } else {
-            lines.push("CI: not configured");
-          }
-          const draft = r.draftPRs ? ` (${r.draftPRs} draft)` : "";
-          lines.push(`PRs: ${r.openPRs ?? 0} open${draft} · Issues: ${r.openIssues ?? 0} open`);
-          if (r.local) {
-            lines.push(
-              `[Local: ${r.local.branch}, ${r.local.dirty} dirty, ` +
-                `${r.local.ahead} ahead / ${r.local.behind} behind]`,
-            );
-          }
-          return lines.join("\n");
-        })
-        .join("\n\n");
-
-      return md;
+      return formatRepoStatusMarkdown(results);
     },
   });
 }

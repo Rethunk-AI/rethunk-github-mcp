@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { registerRepoStatusTool } from "./repo-status-tool.js";
+import { formatRepoStatusMarkdown, registerRepoStatusTool } from "./repo-status-tool.js";
 import { MAX_REPOS_PER_REQUEST } from "./schemas.js";
 import { captureTool } from "./test-harness.js";
 import { timeAgo } from "./utils.js";
@@ -36,6 +36,62 @@ describe("timeAgo", () => {
 
   test("2 weeks → 2w ago", () => {
     expect(timeAgo(msAgo(14 * 86_400 * 1_000))).toBe("2w ago");
+  });
+});
+
+describe("formatRepoStatusMarkdown", () => {
+  test("renders failing CI, draft PRs, and local state", () => {
+    const text = formatRepoStatusMarkdown([
+      {
+        owner: "Rethunk-AI",
+        repo: "rethunk-github-mcp",
+        defaultBranch: "main",
+        latestCommit: {
+          sha7: "abc1234",
+          message: "tighten status output",
+          author: "damon",
+          date: "2h ago",
+        },
+        ci: {
+          status: "failure",
+          failedChecks: [{ name: "Unit tests", conclusion: "FAILURE" }],
+        },
+        openPRs: 3,
+        draftPRs: 1,
+        openIssues: 5,
+        local: { branch: "main", dirty: 0, ahead: 1, behind: 0 },
+      },
+    ]);
+
+    expect(text).toContain("## Rethunk-AI/rethunk-github-mcp (main)");
+    expect(text).toContain("Latest: `abc1234` tighten status output");
+    expect(text).toContain("CI: failing: Unit tests");
+    expect(text).toContain("PRs: 3 open (1 draft) · Issues: 5 open");
+    expect(text).toContain("[Local: main, 0 dirty, 1 ahead / 0 behind]");
+  });
+
+  test("renders errors and missing CI", () => {
+    const text = formatRepoStatusMarkdown([
+      {
+        owner: "Rethunk-AI",
+        repo: "missing",
+        error: {
+          code: "NOT_FOUND",
+          message: "Repository not found.",
+          retryable: false,
+        },
+      },
+      {
+        owner: "Rethunk-AI",
+        repo: "no-ci",
+        openPRs: 0,
+        openIssues: 0,
+      },
+    ]);
+
+    expect(text).toContain("Error (NOT_FOUND): Repository not found.");
+    expect(text).toContain("## Rethunk-AI/no-ci (?)");
+    expect(text).toContain("CI: not configured");
   });
 });
 
