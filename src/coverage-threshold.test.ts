@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { assertCoverageThreshold, parseAllFilesLineCoverage } from "./coverage-threshold.js";
+import {
+  assertCoverageThreshold,
+  parseAllFilesLineCoverage,
+} from "../scripts/coverage-threshold.js";
 
 describe("parseAllFilesLineCoverage", () => {
   test("extracts line coverage from Bun's All files summary row", () => {

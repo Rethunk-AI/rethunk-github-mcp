@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { checkReleaseSanity } from "./release-sanity.js";
+import { checkReleaseSanity } from "../scripts/release-sanity.js";
 
 const BASE_PACKAGE = {
   name: "@rethunk/github-mcp",
@@ -39,5 +39,15 @@ describe("checkReleaseSanity", () => {
         changelog: "## [1.2.3] — 2026-04-26\n",
       }),
     ).toEqual(['package.json "files" must include "dist".']);
+  });
+
+  test("rejects test-only files in built dist artifacts", () => {
+    expect(
+      checkReleaseSanity({
+        packageJson: BASE_PACKAGE,
+        changelog: "## [1.2.3] — 2026-04-26\n",
+        distFiles: ["server.js", "server/test-harness.js"],
+      }),
+    ).toEqual(["dist must not include test-only artifact server/test-harness.js."]);
   });
 });

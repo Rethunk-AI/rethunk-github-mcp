@@ -38,8 +38,10 @@ jobs:
       - name: Lint and format check
         run: bun run check
 
-      - name: Unit tests
-        run: bun run test
+      - name: Unit tests with coverage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bun run test:coverage
 
       - name: Release sanity checks
         run: bun run release:check

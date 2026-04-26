@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 interface PackageJson {
   version?: unknown;
@@ -9,6 +10,7 @@ interface ReleaseSanityInput {
   packageJson: PackageJson;
   changelog: string;
   githubRef?: string;
+  distFiles?: string[];
 }
 
 export function checkReleaseSanity(input: ReleaseSanityInput): string[] {
@@ -39,7 +41,22 @@ export function checkReleaseSanity(input: ReleaseSanityInput): string[] {
     }
   }
 
+  for (const file of input.distFiles ?? []) {
+    if (isForbiddenDistArtifact(file)) {
+      errors.push(`dist must not include test-only artifact ${file}.`);
+    }
+  }
+
   return errors;
+}
+
+function isForbiddenDistArtifact(file: string): boolean {
+  return (
+    file.endsWith(".test.js") ||
+    file === "server/test-harness.js" ||
+    file === "coverage-threshold.js" ||
+    file === "release-sanity.js"
+  );
 }
 
 function escapeRegExp(value: string): string {
@@ -55,6 +72,7 @@ function runReleaseSanityCli(): void {
     packageJson: readPackageJson(),
     changelog: readFileSync("CHANGELOG.md", "utf8"),
     githubRef: process.env.GITHUB_REF,
+    distFiles: listDistFiles(),
   });
 
   if (errors.length > 0) {
@@ -65,6 +83,25 @@ function runReleaseSanityCli(): void {
   }
 
   console.log("Release sanity OK");
+}
+
+function listDistFiles(): string[] {
+  if (!existsSync("dist")) return [];
+
+  const files: string[] = [];
+  const walk = (dir: string, prefix = ""): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        walk(join(dir, entry.name), relative);
+      } else {
+        files.push(relative);
+      }
+    }
+  };
+
+  walk("dist");
+  return files;
 }
 
 if (import.meta.main) {
