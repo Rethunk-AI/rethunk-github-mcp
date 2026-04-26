@@ -16,7 +16,7 @@ import { FormatSchema } from "./schemas.js";
 
 export type PinSource = "go.mod" | ".gitmodules" | "scripts/versions.env" | "package.json";
 
-interface PinEntry {
+export interface PinEntry {
   source: PinSource;
   owner: string;
   repo: string;
@@ -39,7 +39,7 @@ export interface SkippedEntry {
   reason: string;
 }
 
-interface PinDriftResult {
+export interface PinDriftResult {
   localPath: string;
   pins: PinEntry[];
   skipped: SkippedEntry[];
@@ -268,6 +268,47 @@ export function parsePackageJson(localPath: string): { pins: RawPin[]; skipped: 
   }
 
   return { pins, skipped };
+}
+
+export function formatPinDriftMarkdown(result: PinDriftResult): string {
+  const { localPath, pins, skipped, summary } = result;
+  const lines: string[] = [];
+  lines.push(`# Pin Drift: ${localPath}`);
+  lines.push("");
+  lines.push(
+    `**${pins.length} pins** — ${summary.stale} stale, ${summary.upToDate} up to date` +
+      (skipped.length > 0 ? `, ${skipped.length} skipped` : ""),
+  );
+
+  if (summary.stale > 0) {
+    lines.push("");
+    lines.push("## Stale Pins");
+    lines.push("| Source | Repo | Behind | Pinned SHA |");
+    lines.push("|--------|------|--------|------------|");
+    for (const p of pins.filter((x) => x.stale)) {
+      const sha = p.pinnedRef.substring(0, 12);
+      lines.push(`| ${p.source} | ${p.owner}/${p.repo} | ${p.behindBy} | \`${sha}\` |`);
+    }
+  }
+
+  const fresh = pins.filter((p) => !p.stale && p.behindBy >= 0);
+  if (fresh.length > 0) {
+    lines.push("");
+    lines.push("## Up to Date");
+    lines.push(fresh.map((p) => `${p.owner}/${p.repo}`).join(", "));
+  }
+
+  if (skipped.length > 0) {
+    lines.push("");
+    lines.push("## Skipped");
+    lines.push("| Source | Key | Reason |");
+    lines.push("|--------|-----|--------|");
+    for (const s of skipped) {
+      lines.push(`| ${s.source} | \`${s.key}\` | ${s.reason} |`);
+    }
+  }
+
+  return lines.join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -512,46 +553,7 @@ export function registerPinDriftTool(server: FastMCP): void {
 
       if (args.format === "json") return jsonRespond(result);
 
-      // -----------------------------------------------------------------------
-      // Markdown output
-      // -----------------------------------------------------------------------
-      const lines: string[] = [];
-      lines.push(`# Pin Drift: ${localPath}`);
-      lines.push("");
-      lines.push(
-        `**${pinResults.length} pins** — ${staleCount} stale, ${upToDate} up to date` +
-          (allSkipped.length > 0 ? `, ${allSkipped.length} skipped` : ""),
-      );
-
-      if (staleCount > 0) {
-        lines.push("");
-        lines.push("## Stale Pins");
-        lines.push("| Source | Repo | Behind | Pinned SHA |");
-        lines.push("|--------|------|--------|------------|");
-        for (const p of pinResults.filter((x) => x.stale)) {
-          const sha = p.pinnedRef.substring(0, 12);
-          lines.push(`| ${p.source} | ${p.owner}/${p.repo} | ${p.behindBy} | \`${sha}\` |`);
-        }
-      }
-
-      const fresh = pinResults.filter((p) => !p.stale && p.behindBy >= 0);
-      if (fresh.length > 0) {
-        lines.push("");
-        lines.push("## Up to Date");
-        lines.push(fresh.map((p) => `${p.owner}/${p.repo}`).join(", "));
-      }
-
-      if (allSkipped.length > 0) {
-        lines.push("");
-        lines.push("## Skipped");
-        lines.push("| Source | Key | Reason |");
-        lines.push("|--------|-----|--------|");
-        for (const s of allSkipped) {
-          lines.push(`| ${s.source} | \`${s.key}\` | ${s.reason} |`);
-        }
-      }
-
-      return lines.join("\n");
+      return formatPinDriftMarkdown(result);
     },
   });
 }

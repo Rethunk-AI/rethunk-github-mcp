@@ -16,7 +16,7 @@ export interface CommitEntry {
   date: string;
 }
 
-interface CommitHistoryNode {
+export interface CommitHistoryNode {
   oid: string;
   messageHeadline: string;
   committedDate: string;
@@ -39,6 +39,22 @@ interface CommitObjectResult {
       committedDate: string;
     } | null;
   };
+}
+
+export function mapCommitHistoryNodes(nodes: CommitHistoryNode[]): CommitEntry[] {
+  return nodes.map((n) => ({
+    sha7: n.oid.substring(0, 7),
+    message: n.messageHeadline,
+    author: n.author.user?.login ?? n.author.name ?? "unknown",
+    date: n.committedDate,
+  }));
+}
+
+export function filterCommitsAfterPin(commits: CommitEntry[], pinnedSha: string): CommitEntry[] {
+  return commits.filter((c) => {
+    // sha7 prefix match for the pinned commit
+    return !pinnedSha.startsWith(c.sha7) && pinnedSha.substring(0, 7) !== c.sha7;
+  });
 }
 
 /**
@@ -107,12 +123,7 @@ export async function fetchCommitHistory(
   const defaultBranch = data.repository.defaultBranchRef?.name ?? "main";
   const nodes = data.repository.object?.history.nodes ?? [];
 
-  const commits: CommitEntry[] = nodes.map((n) => ({
-    sha7: n.oid.substring(0, 7),
-    message: n.messageHeadline,
-    author: n.author.user?.login ?? n.author.name ?? "unknown",
-    date: n.committedDate,
-  }));
+  const commits = mapCommitHistoryNodes(nodes);
 
   return { commits, defaultBranch };
 }
@@ -147,10 +158,7 @@ export async function countBehind(
   });
 
   // Exclude the pinned commit itself (same oid or older)
-  const newer = commits.filter((c) => {
-    // sha7 prefix match for the pinned commit
-    return !pinnedSha.startsWith(c.sha7) && pinnedSha.substring(0, 7) !== c.sha7;
-  });
+  const newer = filterCommitsAfterPin(commits, pinnedSha);
 
   return { behindBy: newer.length, commits: newer };
 }

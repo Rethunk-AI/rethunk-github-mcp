@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
-import { countBehind, fetchCommitHistory, resolveRef } from "./compare-refs.js";
+import {
+  countBehind,
+  fetchCommitHistory,
+  filterCommitsAfterPin,
+  mapCommitHistoryNodes,
+  resolveRef,
+} from "./compare-refs.js";
 import { buildGoPseudoVersion } from "./module-pin-hint-tool.js";
 import { pseudoVersionSha } from "./pin-drift-tool.js";
 import { parseSince } from "./utils.js";
@@ -68,6 +74,64 @@ describe("parseSince", () => {
 
   test("returns unknown string as-is (passthrough for GitHub to reject)", () => {
     expect(parseSince("yesterday")).toBe("yesterday");
+  });
+});
+
+describe("mapCommitHistoryNodes", () => {
+  test("maps GraphQL history nodes to compact commit entries", () => {
+    expect(
+      mapCommitHistoryNodes([
+        {
+          oid: "0123456789abcdef0123456789abcdef01234567",
+          messageHeadline: "fix(ci): cover branch",
+          committedDate: "2026-04-26T20:00:00Z",
+          author: { name: "Fallback Name", user: { login: "damon" } },
+        },
+        {
+          oid: "abcdef0123456789abcdef0123456789abcdef01",
+          messageHeadline: "docs: update notes",
+          committedDate: "2026-04-25T20:00:00Z",
+          author: { name: "Fallback Name", user: null },
+        },
+        {
+          oid: "fedcba9876543210fedcba9876543210fedcba98",
+          messageHeadline: "chore: no author",
+          committedDate: "2026-04-24T20:00:00Z",
+          author: { name: null, user: null },
+        },
+      ]),
+    ).toEqual([
+      {
+        sha7: "0123456",
+        message: "fix(ci): cover branch",
+        author: "damon",
+        date: "2026-04-26T20:00:00Z",
+      },
+      {
+        sha7: "abcdef0",
+        message: "docs: update notes",
+        author: "Fallback Name",
+        date: "2026-04-25T20:00:00Z",
+      },
+      {
+        sha7: "fedcba9",
+        message: "chore: no author",
+        author: "unknown",
+        date: "2026-04-24T20:00:00Z",
+      },
+    ]);
+  });
+});
+
+describe("filterCommitsAfterPin", () => {
+  test("drops the pinned commit by full or short SHA prefix", () => {
+    const commits = [
+      { sha7: "aaaaaaa", message: "new", author: "a", date: "2026-04-26T20:00:00Z" },
+      { sha7: "bbbbbbb", message: "pin", author: "b", date: "2026-04-25T20:00:00Z" },
+    ];
+
+    expect(filterCommitsAfterPin(commits, "bbbbbbb1234567890")).toEqual([commits[0]]);
+    expect(filterCommitsAfterPin(commits, "bbbbbbb")).toEqual([commits[0]]);
   });
 });
 

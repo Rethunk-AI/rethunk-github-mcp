@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  formatPinDriftMarkdown,
   parseGoMod,
   parsePackageJson,
   parseVersionsEnv,
@@ -398,6 +399,53 @@ MFA_VERSION=v1.2.3
         reason: "ambiguous_repo",
       },
     ]);
+  });
+});
+
+describe("formatPinDriftMarkdown", () => {
+  test("renders stale, fresh, and skipped sections", () => {
+    const text = formatPinDriftMarkdown({
+      localPath: "/tmp/repo",
+      pins: [
+        {
+          source: "go.mod",
+          owner: "Rethunk-AI",
+          repo: "stale-lib",
+          pinnedRef: "0123456789abcdef",
+          defaultBranch: "main",
+          headSha: "abcdef0123456789",
+          behindBy: 3,
+          commits: [],
+          stale: true,
+        },
+        {
+          source: "package.json",
+          owner: "Rethunk-AI",
+          repo: "fresh-lib",
+          pinnedRef: "abcdef012345",
+          defaultBranch: "main",
+          headSha: "abcdef0123456789",
+          behindBy: 0,
+          commits: [],
+          stale: false,
+        },
+      ],
+      skipped: [
+        {
+          source: "scripts/versions.env",
+          key: "SATCOM_REF",
+          value: "0123456789abcdef0123456789abcdef01234567",
+          reason: "ambiguous_repo",
+        },
+      ],
+      summary: { totalPins: 2, stale: 1, upToDate: 1 },
+    });
+
+    expect(text).toContain("# Pin Drift: /tmp/repo");
+    expect(text).toContain("**2 pins** — 1 stale, 1 up to date, 1 skipped");
+    expect(text).toContain("| go.mod | Rethunk-AI/stale-lib | 3 | `0123456789ab` |");
+    expect(text).toContain("Rethunk-AI/fresh-lib");
+    expect(text).toContain("| scripts/versions.env | `SATCOM_REF` | ambiguous_repo |");
   });
 });
 
