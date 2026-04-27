@@ -4,7 +4,7 @@ import { gateAuth } from "./github-auth.js";
 import { classifyError, getOctokit } from "./github-client.js";
 import { errorRespond, jsonRespond, mkError } from "./json.js";
 import { FormatSchema, MaxLogLinesSchema, RepoRefSchema } from "./schemas.js";
-import { sha7, tailTruncate } from "./utils.js";
+import { isFailed, sha7, tailTruncate } from "./utils.js";
 
 interface FailedStep {
   name: string;
@@ -86,8 +86,7 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
             per_page: 5,
           });
           run =
-            res.data.workflow_runs.find((r) => r.conclusion === "failure") ??
-            res.data.workflow_runs[0];
+            res.data.workflow_runs.find((r) => isFailed(r.conclusion)) ?? res.data.workflow_runs[0];
         } else {
           const res = await octokit.actions.listWorkflowRunsForRepo({
             owner,
@@ -115,7 +114,7 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
         });
 
         const allJobs = jobsRes.data.jobs;
-        const failed = allJobs.filter((j) => j.conclusion === "failure");
+        const failed = allJobs.filter((j) => isFailed(j.conclusion));
         const jobsToAnalyze = failed.length > 0 ? failed : allJobs;
 
         const grepRe = args.grepLog ? new RegExp(args.grepLog, "i") : undefined;

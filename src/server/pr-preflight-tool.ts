@@ -275,7 +275,7 @@ async function fetchPRFailingLogs(
       per_page: 5,
     });
     const run =
-      runsRes.data.workflow_runs.find((r) => r.conclusion === "failure") ??
+      runsRes.data.workflow_runs.find((r) => isFailed(r.conclusion)) ??
       runsRes.data.workflow_runs[0];
     if (!run) return [];
 
@@ -285,7 +285,7 @@ async function fetchPRFailingLogs(
       run_id: run.id,
       filter: "latest",
     });
-    const failed = jobsRes.data.jobs.filter((j) => j.conclusion === "failure");
+    const failed = jobsRes.data.jobs.filter((j) => isFailed(j.conclusion));
     if (failed.length === 0) return [];
 
     const logs: FailingJobLog[] = [];
