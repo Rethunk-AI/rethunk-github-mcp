@@ -94,7 +94,7 @@ export interface CheckNode {
 }
 
 /** Check if a CI conclusion indicates failure (case-insensitive). */
-export function isFailed(conclusion: string): boolean {
+export function isFailed(conclusion: string | null | undefined): boolean {
   return conclusion === "FAILURE" || conclusion === "failure";
 }
 
