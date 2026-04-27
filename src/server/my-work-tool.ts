@@ -70,40 +70,40 @@ export function registerMyWorkTool(server: FastMCP): void {
       }
 
       const max = args.maxResults;
-      const query = `query {
-  authored: search(query: "is:pr is:open author:${username}", type: ISSUE, first: ${max}) {
-    nodes {
-      ... on PullRequest {
+      const query = `query($username:String!,$max:Int!){
+  authored:search(query:"is:pr is:open author:$username",type:ISSUE,first:$max){
+    nodes{
+      ...on PullRequest{
         __typename number title isDraft updatedAt
-        repository { nameWithOwner }
-        author { login }
+        repository{nameWithOwner}
+        author{login}
         reviewDecision
-        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+        commits(last:1){nodes{commit{statusCheckRollup{state}}}}
       }
     }
   }
-  reviewRequested: search(query: "is:pr is:open review-requested:${username}", type: ISSUE, first: ${max}) {
-    nodes {
-      ... on PullRequest {
+  reviewRequested:search(query:"is:pr is:open review-requested:$username",type:ISSUE,first:$max){
+    nodes{
+      ...on PullRequest{
         __typename number title updatedAt
-        repository { nameWithOwner }
-        author { login }
+        repository{nameWithOwner}
+        author{login}
       }
     }
   }
-  assignedIssues: search(query: "is:issue is:open assignee:${username}", type: ISSUE, first: ${max}) {
-    nodes {
-      ... on Issue {
+  assignedIssues:search(query:"is:issue is:open assignee:$username",type:ISSUE,first:$max){
+    nodes{
+      ...on Issue{
         __typename number title updatedAt
-        repository { nameWithOwner }
-        labels(first: 5) { nodes { name } }
+        repository{nameWithOwner}
+        labels(first:5){nodes{name}}
       }
     }
   }
 }`;
 
       try {
-        const data = await graphqlQuery<SearchResponse>(query);
+        const data = await graphqlQuery<SearchResponse>(query, { username, max });
 
         const allAuthoredPrs = data.authored.nodes
           .filter((n): n is GraphQLPullRequest => n.__typename === "PullRequest")
