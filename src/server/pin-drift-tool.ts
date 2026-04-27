@@ -9,6 +9,7 @@ import { gateAuth } from "./github-auth.js";
 import { classifyError, graphqlQuery, parallelApi, parseGitHubRemoteUrl } from "./github-client.js";
 import { errorRespond, jsonRespond, type McpErrorEnvelope } from "./json.js";
 import { FormatSchema } from "./schemas.js";
+import { sha7, sha12 } from "./utils.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -286,7 +287,7 @@ export function formatPinDriftMarkdown(result: PinDriftResult): string {
     lines.push("| Source | Repo | Behind | Pinned SHA |");
     lines.push("|--------|------|--------|------------|");
     for (const p of pins.filter((x) => x.stale)) {
-      const sha = p.pinnedRef.substring(0, 12);
+      const sha = sha12(p.pinnedRef);
       lines.push(`| ${p.source} | ${p.owner}/${p.repo} | ${p.behindBy} | \`${sha}\` |`);
     }
   }
@@ -475,10 +476,7 @@ export function registerPinDriftTool(server: FastMCP): void {
           const headSha = dbRef.target.oid;
 
           // Already at head?
-          if (
-            headSha.startsWith(pin.pinnedRef) ||
-            pin.pinnedRef.startsWith(headSha.substring(0, 7))
-          ) {
+          if (headSha.startsWith(pin.pinnedRef) || pin.pinnedRef.startsWith(sha7(headSha))) {
             return {
               source: pin.source,
               owner: pin.owner,

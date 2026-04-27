@@ -4,7 +4,7 @@ import { gateAuth } from "./github-auth.js";
 import { classifyError, getOctokit } from "./github-client.js";
 import { errorRespond, jsonRespond, mkError } from "./json.js";
 import { FormatSchema, MaxLogLinesSchema, RepoRefSchema } from "./schemas.js";
-import { tailTruncate } from "./utils.js";
+import { sha7, tailTruncate } from "./utils.js";
 
 interface FailedStep {
   name: string;
@@ -154,7 +154,7 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
           branch: run.head_branch ?? "unknown",
           url: run.html_url,
           triggerCommit: {
-            sha7: run.head_sha.substring(0, 7),
+            sha7: sha7(run.head_sha),
             message: run.head_commit?.message ?? "unknown",
             author: run.head_commit?.author?.name ?? "unknown",
           },

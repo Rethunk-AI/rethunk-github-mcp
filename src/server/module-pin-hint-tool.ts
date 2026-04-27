@@ -4,6 +4,7 @@ import { gateAuth } from "./github-auth.js";
 import { classifyError, graphqlQuery } from "./github-client.js";
 import { errorRespond, jsonRespond, mkError } from "./json.js";
 import { FormatSchema } from "./schemas.js";
+import { sha12 } from "./utils.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -30,8 +31,7 @@ export function formatPseudoVersionDate(isoDate: string): string {
 /** Build a Go pseudo-version: v0.0.0-YYYYMMDDHHMMSS-<sha12> */
 export function buildGoPseudoVersion(committedDate: string, fullSha: string): string {
   const ts = formatPseudoVersionDate(committedDate);
-  const sha12 = fullSha.substring(0, 12);
-  return `v0.0.0-${ts}-${sha12}`;
+  return `v0.0.0-${ts}-${sha12(fullSha)}`;
 }
 
 export interface ModulePinHintResult {

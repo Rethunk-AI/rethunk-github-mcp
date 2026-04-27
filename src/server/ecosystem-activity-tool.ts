@@ -15,7 +15,7 @@ import {
   truncateText,
 } from "./json.js";
 import { FormatSchema, LocalOrRemoteRepoSchema, MAX_REPOS_PER_REQUEST } from "./schemas.js";
-import { extractFirstPR, parseSince } from "./utils.js";
+import { extractFirstPR, parseSince, sha7 } from "./utils.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -123,7 +123,7 @@ async function fetchRepoCommits(
       return {
         owner,
         repo,
-        sha7: n.oid.substring(0, 7),
+        sha7: sha7(n.oid),
         message: n.messageHeadline,
         author: n.author.user?.login ?? n.author.name ?? "unknown",
         date: n.committedDate,

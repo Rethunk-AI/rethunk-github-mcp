@@ -10,7 +10,7 @@ import {
 } from "./github-client.js";
 import { errorRespond, jsonRespond, mkError, truncateText } from "./json.js";
 import { FormatSchema, MaxCommitsSchema, RepoRefSchema } from "./schemas.js";
-import { type CheckNode, extractPRNumbers, normalizeFailedChecks } from "./utils.js";
+import { type CheckNode, extractPRNumbers, normalizeFailedChecks, sha7 } from "./utils.js";
 
 interface CommitForRelease {
   sha7: string;
@@ -120,7 +120,7 @@ export function registerReleaseReadinessTool(server: FastMCP): void {
           const prNums = extractPRNumbers(c.commit.message);
           const firstPR = prNums[0] !== undefined ? prMap.get(prNums[0]) : undefined;
           return {
-            sha7: c.sha.substring(0, 7),
+            sha7: sha7(c.sha),
             message: c.commit.message.split("\n")[0] ?? "",
             author: c.commit.author?.name ?? c.author?.login ?? "unknown",
             date: c.commit.author?.date ?? "",

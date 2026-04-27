@@ -8,6 +8,7 @@
  */
 
 import { graphqlQuery } from "./github-client.js";
+import { sha7 } from "./utils.js";
 
 export interface CommitEntry {
   sha7: string;
@@ -43,7 +44,7 @@ interface CommitObjectResult {
 
 export function mapCommitHistoryNodes(nodes: CommitHistoryNode[]): CommitEntry[] {
   return nodes.map((n) => ({
-    sha7: n.oid.substring(0, 7),
+    sha7: sha7(n.oid),
     message: n.messageHeadline,
     author: n.author.user?.login ?? n.author.name ?? "unknown",
     date: n.committedDate,
@@ -53,7 +54,7 @@ export function mapCommitHistoryNodes(nodes: CommitHistoryNode[]): CommitEntry[]
 export function filterCommitsAfterPin(commits: CommitEntry[], pinnedSha: string): CommitEntry[] {
   return commits.filter((c) => {
     // sha7 prefix match for the pinned commit
-    return !pinnedSha.startsWith(c.sha7) && pinnedSha.substring(0, 7) !== c.sha7;
+    return !pinnedSha.startsWith(c.sha7) && sha7(pinnedSha) !== c.sha7;
   });
 }
 

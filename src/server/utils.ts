@@ -2,6 +2,16 @@
  * Shared utilities used across multiple MCP tool files.
  */
 
+/** Extract the first 7 characters of a commit SHA (short form). */
+export function sha7(fullSha: string): string {
+  return fullSha.substring(0, 7);
+}
+
+/** Extract the first 12 characters of a commit SHA (Go pseudo-version form). */
+export function sha12(fullSha: string): string {
+  return fullSha.substring(0, 12);
+}
+
 /** Format a past ISO8601 date as a human-readable relative string. */
 export function timeAgo(dateStr: string): string {
   const sec = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);

@@ -17,7 +17,7 @@ import {
   truncateText,
 } from "./json.js";
 import { FormatSchema, LocalOrRemoteRepoSchema, MAX_REPOS_PER_REQUEST } from "./schemas.js";
-import { type CheckNode, normalizeFailedChecks, timeAgo } from "./utils.js";
+import { type CheckNode, normalizeFailedChecks, sha7, timeAgo } from "./utils.js";
 
 interface RepoQueryResult {
   repository: {
@@ -206,7 +206,7 @@ export function registerRepoStatusTool(server: FastMCP): void {
             result.defaultBranch = r.defaultBranchRef.name;
             const c = r.defaultBranchRef.target;
             result.latestCommit = {
-              sha7: c.oid.substring(0, 7),
+              sha7: sha7(c.oid),
               message: truncateText(c.messageHeadline, 60),
               author: c.author.user?.login ?? "unknown",
               date: timeAgo(c.author.date),
