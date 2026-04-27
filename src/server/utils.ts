@@ -12,6 +12,11 @@ export function sha12(fullSha: string): string {
   return fullSha.substring(0, 12);
 }
 
+/** Extract the first line of text (before first newline). */
+export function firstLine(text: string): string {
+  return text.split("\n")[0] ?? "";
+}
+
 /** Format a past ISO8601 date as a human-readable relative string. */
 export function timeAgo(dateStr: string): string {
   const sec = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);

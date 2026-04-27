@@ -9,7 +9,7 @@ import {
 } from "./github-client.js";
 import { errorRespond, jsonRespond, mkError } from "./json.js";
 import { FormatSchema, MaxCommitsSchema, RepoRefSchema } from "./schemas.js";
-import { extractPRNumbers, sha7 } from "./utils.js";
+import { extractPRNumbers, firstLine, sha7 } from "./utils.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -115,7 +115,7 @@ export function registerChangelogDraftTool(server: FastMCP): void {
           const firstPR = prNums[0] !== undefined ? prMap.get(prNums[0]) : undefined;
           return {
             sha7: sha7(c.sha),
-            message: c.commit.message.split("\n")[0] ?? "",
+            message: firstLine(c.commit.message),
             author: c.commit.author?.name ?? c.author?.login ?? "unknown",
             date: c.commit.author?.date ?? "",
             ...(firstPR
