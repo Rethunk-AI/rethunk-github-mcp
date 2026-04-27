@@ -78,14 +78,13 @@ async function fetchRepoCommits(
 
   try {
     for (const path of pathsToFetch) {
-      const pathClause = path ? `, path: "${path}"` : "";
-      const query = `query($owner:String!,$repo:String!){
+      const query = `query($owner:String!,$repo:String!,$since:DateTime!,$path:String){
         repository(owner:$owner,name:$repo){
           defaultBranchRef{
             name
             target{
               ...on Commit{
-                history(first:${maxCommits},since:"${sinceIso}"${pathClause}){
+                history(first:${maxCommits},since:$since,path:$path){
                   nodes{
                     oid messageHeadline committedDate
                     author{ name user{ login } }
@@ -97,7 +96,12 @@ async function fetchRepoCommits(
         }
       }`;
 
-      const data = await graphqlQuery<HistoryQueryResult>(query, { owner, repo });
+      const data = await graphqlQuery<HistoryQueryResult>(query, {
+        owner,
+        repo,
+        since: sinceIso,
+        path: path ?? null,
+      });
       const nodes = data.repository.defaultBranchRef?.target?.history.nodes ?? [];
       for (const n of nodes) {
         allNodes.set(n.oid, n);
