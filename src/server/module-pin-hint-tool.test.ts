@@ -139,19 +139,23 @@ describe("module_pin_hint tool", () => {
     expect(parsed.goPseudoVersion).toMatch(/^v0\.0\.0-\d{14}-[0-9a-f]{12}$/);
   });
 
-  test("returns NOT_FOUND for a nonexistent ref", async () => {
-    const text = await run({
-      owner: "Rethunk-AI",
-      repo: "rethunk-github-mcp",
-      ref: "refs/heads/branch-that-does-not-exist-xyzzy",
-      language: "go",
-      format: "json",
-    });
-    const parsed = JSON.parse(text) as { error?: { code: string } };
-    if (!parsed.error) return; // unexpected — skip
-    if (parsed.error.code === "AUTH_MISSING") return;
-    expect(parsed.error.code).toBe("NOT_FOUND");
-  });
+  test(
+    "returns NOT_FOUND for a nonexistent ref",
+    async () => {
+      const text = await run({
+        owner: "Rethunk-AI",
+        repo: "rethunk-github-mcp",
+        ref: "refs/heads/branch-that-does-not-exist-xyzzy",
+        language: "go",
+        format: "json",
+      });
+      const parsed = JSON.parse(text) as { error?: { code: string } };
+      if (!parsed.error) return; // unexpected — skip
+      if (parsed.error.code === "AUTH_MISSING") return;
+      expect(parsed.error.code).toBe("NOT_FOUND");
+    },
+    { timeout: 15000 },
+  );
 
   test("markdown format: returns formatted pseudo-version block", async () => {
     const text = await run({

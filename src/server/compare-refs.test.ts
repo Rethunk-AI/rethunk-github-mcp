@@ -214,13 +214,17 @@ describe("fetchCommitHistory", () => {
 });
 
 describe("countBehind", () => {
-  test("returns behindBy >= 0 when pinned SHA is HEAD (allows for push during test)", async () => {
-    const ref = await resolveRef(TEST_OWNER, TEST_REPO, "main");
-    if (!ref) return; // no auth
-    const { behindBy } = await countBehind(TEST_OWNER, TEST_REPO, "main", ref.oid, 10);
-    // HEAD could have advanced by 1 between resolveRef calls — allow small drift
-    expect(behindBy).toBeGreaterThanOrEqual(0);
-  });
+  test(
+    "returns behindBy >= 0 when pinned SHA is HEAD (allows for push during test)",
+    async () => {
+      const ref = await resolveRef(TEST_OWNER, TEST_REPO, "main");
+      if (!ref) return; // no auth
+      const { behindBy } = await countBehind(TEST_OWNER, TEST_REPO, "main", ref.oid, 10);
+      // HEAD could have advanced by 1 between resolveRef calls — allow small drift
+      expect(behindBy).toBeGreaterThanOrEqual(0);
+    },
+    { timeout: 15000 },
+  );
 
   test("returns behindBy > 0 when pinned to a known-old SHA", async () => {
     // aee827e22f75... is HEAD~5 — should be at least 5 commits behind main
