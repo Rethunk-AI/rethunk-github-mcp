@@ -9,7 +9,7 @@ import {
 } from "./github-client.js";
 import { errorRespond, jsonRespond, mkError, mkLocalRepoNoRemote } from "./json.js";
 import { FormatSchema, MaxLogLinesSchema } from "./schemas.js";
-import { tailTruncate } from "./utils.js";
+import { isFailed, tailTruncate } from "./utils.js";
 
 interface ReviewNode {
   author: { login: string };
@@ -220,9 +220,7 @@ async function checkOnePR(
     reasons.push("Not yet approved");
   }
 
-  const failingChecks = checks.filter(
-    (c) => c.conclusion === "FAILURE" || c.conclusion === "failure",
-  );
+  const failingChecks = checks.filter((c) => isFailed(c.conclusion));
   if (failingChecks.length > 0) {
     safe = false;
     reasons.push(`CI failing: ${failingChecks.map((c) => c.name).join(", ")}`);
@@ -445,7 +443,7 @@ export function registerPrPreflightTool(server: FastMCP): void {
             enriched.map(async (r) => {
               if (
                 r.ci.status !== "UNKNOWN" &&
-                r.ci.checks.some((c) => c.conclusion === "FAILURE" || c.conclusion === "failure") &&
+                r.ci.checks.some((c) => isFailed(c.conclusion)) &&
                 r.headSha
               ) {
                 r.failingLogs = await fetchPRFailingLogs(owner, repo, r.headSha, args.maxLogLines);
@@ -472,9 +470,7 @@ export function registerPrPreflightTool(server: FastMCP): void {
           const blockers = reasons.filter((r) => !r.includes("commits behind"));
           const warnings = reasons.filter((r) => r.includes("commits behind"));
 
-          const failingChecks = result.ci.checks.filter(
-            (c) => c.conclusion === "FAILURE" || c.conclusion === "failure",
-          );
+          const failingChecks = result.ci.checks.filter((c) => isFailed(c.conclusion));
           const pendingChecks = result.ci.checks.filter(
             (c) => c.conclusion === null && c.status !== "COMPLETED",
           );

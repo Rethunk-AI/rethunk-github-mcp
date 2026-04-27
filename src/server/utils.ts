@@ -93,6 +93,11 @@ export interface CheckNode {
   state?: string;
 }
 
+/** Check if a CI conclusion indicates failure (case-insensitive). */
+export function isFailed(conclusion: string): boolean {
+  return conclusion === "FAILURE" || conclusion === "failure";
+}
+
 /**
  * Normalize a list of check-rollup context nodes into a flat array of
  * `{ name, conclusion }` pairs for any check that isn't passing/skipped.
