@@ -25,9 +25,9 @@ async function fetchHeadCI(
   repo: string,
   headRef: string,
 ): Promise<{ status: string; failedChecks: { name: string; conclusion: string }[] }> {
-  const query = `query($owner:String!,$repo:String!){
+  const query = `query($owner:String!,$repo:String!,$expr:String!){
     repository(owner:$owner,name:$repo){
-      object(expression:"${headRef}"){
+      object(expression:$expr){
         ...on Commit{statusCheckRollup{state contexts(first:20){nodes{...on CheckRun{name conclusion}...on StatusContext{context state}}}}}
       }
     }
@@ -40,7 +40,7 @@ async function fetchHeadCI(
           statusCheckRollup: { state: string; contexts: { nodes: CheckNode[] } } | null;
         } | null;
       };
-    }>(query, { owner, repo });
+    }>(query, { owner, repo, expr: headRef });
 
     const rollup = data.repository.object?.statusCheckRollup;
     if (!rollup) return { status: "not_configured", failedChecks: [] };
