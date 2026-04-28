@@ -8,6 +8,7 @@ import { registerMyWorkTool } from "./my-work-tool.js";
 import { registerOrgPulseTool } from "./org-pulse-tool.js";
 import { registerPinDriftTool } from "./pin-drift-tool.js";
 import { registerPrPreflightTool } from "./pr-preflight-tool.js";
+import { registerReleaseCreateTool } from "./release-create-tool.js";
 import { registerReleaseReadinessTool } from "./release-readiness-tool.js";
 import { registerRepoStatusTool } from "./repo-status-tool.js";
 
@@ -16,6 +17,7 @@ export function registerRethunkGitHubTools(server: FastMCP): void {
   registerMyWorkTool(server);
   registerPrPreflightTool(server);
   registerReleaseReadinessTool(server);
+  registerReleaseCreateTool(server);
   registerCiDiagnosisTool(server);
   registerOrgPulseTool(server);
   registerPinDriftTool(server);
