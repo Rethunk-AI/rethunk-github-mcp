@@ -108,6 +108,10 @@ async function fetchRepoCommits(
       }
     }
   } catch (err) {
+    console.error(
+      `[fetchRepoCommits] Failed to fetch commits for ${owner}/${repo}:`,
+      err instanceof Error ? err.message : String(err),
+    );
     return { owner, repo, commitCount: 0, error: classifyError(err), commits: [] };
   }
 

@@ -172,8 +172,12 @@ async function checkOnePR(
       head: pr.headRefName,
     });
     behindBy = cmp.data.behind_by ?? 0;
-  } catch {
+  } catch (err) {
     // comparison not available
+    console.error(
+      `[pr_preflight] Failed to compare commits ${pr.baseRefName}...${pr.headRefName}:`,
+      err instanceof Error ? err.message : String(err),
+    );
   }
 
   // De-duplicate reviews: latest per author
@@ -298,13 +302,21 @@ async function fetchPRFailingLogs(
           job_id: job.id,
         });
         log = tailTruncate(String(logRes.data), maxLines);
-      } catch {
+      } catch (err) {
         // expired or missing
+        console.error(
+          `[fetchPRFailingLogs] Failed to download logs for job ${job.id}:`,
+          err instanceof Error ? err.message : String(err),
+        );
       }
       logs.push({ job: job.name, log });
     }
     return logs;
-  } catch {
+  } catch (err) {
+    console.error(
+      `[fetchPRFailingLogs] Failed to fetch workflow runs for ${owner}/${repo}:`,
+      err instanceof Error ? err.message : String(err),
+    );
     return [];
   }
 }
@@ -534,6 +546,10 @@ export function registerPrPreflightTool(server: FastMCP): void {
           (logBlock ? `\n\n---\n\n## Failing CI Logs\n\n${logBlock}` : "")
         );
       } catch (err) {
+        console.error(
+          `[pr_preflight] Failed to check PR(s) for ${owner}/${repo}:`,
+          err instanceof Error ? err.message : String(err),
+        );
         return errorRespond(classifyError(err));
       }
     },

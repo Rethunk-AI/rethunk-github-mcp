@@ -77,12 +77,20 @@ function getLocalGitState(localPath: string): RepoResult["local"] | undefined {
       }).trim();
       ahead = Number.parseInt(aheadStr, 10) || 0;
       behind = Number.parseInt(behindStr, 10) || 0;
-    } catch {
+    } catch (err) {
       // no upstream configured
+      console.error(
+        `[getLocalGitState] Failed to check upstream status for ${localPath}:`,
+        err instanceof Error ? err.message : String(err),
+      );
     }
 
     return { branch, dirty, ahead, behind };
-  } catch {
+  } catch (err) {
+    console.error(
+      `[getLocalGitState] Failed to get git state for ${localPath}:`,
+      err instanceof Error ? err.message : String(err),
+    );
     return undefined;
   }
 }
@@ -229,6 +237,10 @@ export function registerRepoStatusTool(server: FastMCP): void {
 
           return result;
         } catch (err) {
+          console.error(
+            `[repo_status] Failed to fetch status for ${owner}/${repo}:`,
+            err instanceof Error ? err.message : String(err),
+          );
           return { owner, repo, error: classifyError(err) };
         }
       });

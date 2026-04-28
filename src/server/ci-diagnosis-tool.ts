@@ -136,8 +136,12 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
                 .join("\n");
             }
             logText = tailTruncate(raw, args.maxLogLines);
-          } catch {
+          } catch (err) {
             // logs expired or unavailable
+            console.error(
+              `[ci_diagnosis] Failed to download logs for job ${job.id}:`,
+              err instanceof Error ? err.message : String(err),
+            );
           }
           failedJobs.push({
             name: job.name,
@@ -186,6 +190,10 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
 
         return lines.join("\n");
       } catch (err) {
+        console.error(
+          `[ci_diagnosis] Failed to diagnose CI for ${owner}/${repo}:`,
+          err instanceof Error ? err.message : String(err),
+        );
         return errorRespond(classifyError(err));
       }
     },

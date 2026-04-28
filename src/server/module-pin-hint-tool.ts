@@ -175,6 +175,10 @@ export function registerModulePinHintTool(server: FastMCP): void {
 
         return formatModulePinHintMarkdown(result);
       } catch (err) {
+        console.error(
+          `[module_pin_hint] Failed to resolve pseudo-version for ${owner}/${repo}:`,
+          err instanceof Error ? err.message : String(err),
+        );
         return errorRespond(classifyError(err));
       }
     },

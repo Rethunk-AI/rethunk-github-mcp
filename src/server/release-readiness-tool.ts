@@ -54,7 +54,11 @@ async function fetchHeadCI(
     const failed = normalizeFailedChecks(rollup.contexts.nodes);
 
     return { status: rollup.state.toLowerCase(), failedChecks: failed };
-  } catch {
+  } catch (err) {
+    console.error(
+      `[fetchHeadCI] Failed to fetch CI status for ${owner}/${repo} @ ${headRef}:`,
+      err instanceof Error ? err.message : String(err),
+    );
     return { status: "error_fetching", failedChecks: [] };
   }
 }
@@ -186,6 +190,10 @@ export function registerReleaseReadinessTool(server: FastMCP): void {
 
         return lines.join("\n");
       } catch (err) {
+        console.error(
+          `[release_readiness] Failed to generate release readiness report for ${owner}/${repo}:`,
+          err instanceof Error ? err.message : String(err),
+        );
         return errorRespond(classifyError(err));
       }
     },

@@ -172,6 +172,10 @@ export function registerOrgPulseTool(server: FastMCP): void {
           first: args.maxRepos,
         });
       } catch (err) {
+        console.error(
+          `[org_pulse] Failed to fetch org pulse for ${args.org}:`,
+          err instanceof Error ? err.message : String(err),
+        );
         return errorRespond(classifyError(err));
       }
 

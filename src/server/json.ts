@@ -13,7 +13,11 @@ export function readPackageVersion(): string {
   try {
     const j = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: string };
     _cachedVersion = j.version ?? "0.0.0";
-  } catch {
+  } catch (err) {
+    console.error(
+      `[readPackageVersion] Failed to read ${pkgPath}:`,
+      err instanceof Error ? err.message : String(err),
+    );
     _cachedVersion = "0.0.0";
   }
   return _cachedVersion;

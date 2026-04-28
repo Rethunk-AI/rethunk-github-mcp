@@ -65,6 +65,10 @@ export function registerMyWorkTool(server: FastMCP): void {
           );
           username = viewer.viewer.login;
         } catch (err) {
+          console.error(
+            "[my_work_tool] Failed to fetch viewer login:",
+            err instanceof Error ? err.message : String(err),
+          );
           return errorRespond(classifyError(err));
         }
       }
@@ -196,6 +200,10 @@ export function registerMyWorkTool(server: FastMCP): void {
 
         return lines.join("\n");
       } catch (err) {
+        console.error(
+          `[my_work_tool] Failed to fetch work items for @${username}:`,
+          err instanceof Error ? err.message : String(err),
+        );
         return errorRespond(classifyError(err));
       }
     },

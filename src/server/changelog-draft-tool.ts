@@ -159,6 +159,10 @@ export function registerChangelogDraftTool(server: FastMCP): void {
 
         return lines.join("\n");
       } catch (err) {
+        console.error(
+          `[changelog_draft] Failed to generate changelog for ${owner}/${repo}:`,
+          err instanceof Error ? err.message : String(err),
+        );
         return errorRespond(classifyError(err));
       }
     },

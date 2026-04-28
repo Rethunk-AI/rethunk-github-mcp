@@ -79,7 +79,11 @@ export async function resolveRef(
     const obj = data.repository.object;
     if (!obj) return null;
     return { oid: obj.oid, committedDate: obj.committedDate };
-  } catch {
+  } catch (err) {
+    console.error(
+      `[resolveRef] Failed to resolve ref '${ref}' in ${owner}/${repo}:`,
+      err instanceof Error ? err.message : String(err),
+    );
     return null;
   }
 }

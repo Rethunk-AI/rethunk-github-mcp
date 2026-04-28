@@ -183,7 +183,11 @@ function parseGitModules(localPath: string): { pins: RawPin[]; skipped: SkippedE
         repo: ownerRepo.repo,
         pinnedRef: shaMatch[1],
       });
-    } catch {
+    } catch (err) {
+      console.error(
+        `[parseGitModules] Failed to read git SHA for submodule '${subPath}':`,
+        err instanceof Error ? err.message : String(err),
+      );
       skipped.push({
         source: ".gitmodules",
         key: subPath,
@@ -234,7 +238,11 @@ export function parsePackageJson(localPath: string): { pins: RawPin[]; skipped: 
   let pkg: Record<string, unknown>;
   try {
     pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as Record<string, unknown>;
-  } catch {
+  } catch (err) {
+    console.error(
+      `[parsePackageJson] Failed to parse ${pkgPath}:`,
+      err instanceof Error ? err.message : String(err),
+    );
     return { pins, skipped };
   }
 
@@ -356,8 +364,12 @@ function expandPinFiles(patterns: string[], localPath: string): string[] {
       for (const entry of entries) {
         if (re.test(String(entry))) expanded.add(String(entry));
       }
-    } catch {
+    } catch (err) {
       // directory not readable
+      console.error(
+        `[expandPinFiles] Failed to read directory ${localPath}:`,
+        err instanceof Error ? err.message : String(err),
+      );
     }
   }
   return [...expanded];
@@ -524,6 +536,10 @@ export function registerPinDriftTool(server: FastMCP): void {
             stale: behindBy > 0,
           };
         } catch (err) {
+          console.error(
+            `[pin_drift] Failed to resolve pin ${pin.owner}/${pin.repo}:${pin.pinnedRef}:`,
+            err instanceof Error ? err.message : String(err),
+          );
           return {
             source: pin.source,
             owner: pin.owner,

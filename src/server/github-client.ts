@@ -164,8 +164,12 @@ export function resolveLocalRepoRemote(
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
     return parseGitHubRemoteUrl(url);
-  } catch {
+  } catch (err) {
     // Not a git repo or no origin
+    console.error(
+      `[resolveLocalRepoRemote] Failed to resolve remote for ${localPath}:`,
+      err instanceof Error ? err.message : String(err),
+    );
   }
   return undefined;
 }
@@ -219,6 +223,7 @@ export async function fetchPRMetadata(
     const classified = classifyError(err);
     console.error(
       `[fetchPRMetadata] Error fetching PR metadata for ${owner}/${repo} (PRs: ${batch.join(", ")}): ${classified.code} — ${classified.message}`,
+      err instanceof Error ? err.message : String(err),
     );
   }
   return map;

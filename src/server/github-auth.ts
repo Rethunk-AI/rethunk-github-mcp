@@ -42,8 +42,12 @@ export function gateAuth(): AuthResult {
       cached = { ok: true, token };
       return cached;
     }
-  } catch {
+  } catch (err) {
     // gh not installed or not authenticated — fall through
+    console.error(
+      "[gateAuth] Failed to get token via 'gh auth token':",
+      err instanceof Error ? err.message : String(err),
+    );
   }
 
   cached = {
