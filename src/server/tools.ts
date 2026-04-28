@@ -11,6 +11,7 @@ import { registerPrPreflightTool } from "./pr-preflight-tool.js";
 import { registerReleaseCreateTool } from "./release-create-tool.js";
 import { registerReleaseReadinessTool } from "./release-readiness-tool.js";
 import { registerRepoStatusTool } from "./repo-status-tool.js";
+import { registerWorkflowDispatchTool } from "./workflow-dispatch-tool.js";
 
 export function registerRethunkGitHubTools(server: FastMCP): void {
   registerRepoStatusTool(server);
@@ -24,4 +25,5 @@ export function registerRethunkGitHubTools(server: FastMCP): void {
   registerEcosystemActivityTool(server);
   registerModulePinHintTool(server);
   registerChangelogDraftTool(server);
+  registerWorkflowDispatchTool(server);
 }
