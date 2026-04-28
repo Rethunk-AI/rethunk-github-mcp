@@ -1,9 +1,13 @@
 import type { FastMCP } from "fastmcp";
 
+import { registerActionsRunsFilterTool } from "./actions-runs-filter-tool.js";
 import { registerChangelogDraftTool } from "./changelog-draft-tool.js";
+import { registerCheckRunCreateTool } from "./check-run-create-tool.js";
 import { registerCiDiagnosisTool } from "./ci-diagnosis-tool.js";
 import { registerEcosystemActivityTool } from "./ecosystem-activity-tool.js";
+import { registerGhAuthStatusTool } from "./gh-auth-status-tool.js";
 import { registerIssueFromTemplateTool } from "./issue-from-template-tool.js";
+import { registerLabelsSyncTool } from "./labels-sync-tool.js";
 import { registerModulePinHintTool } from "./module-pin-hint-tool.js";
 import { registerMyWorkTool } from "./my-work-tool.js";
 import { registerOrgPulseTool } from "./org-pulse-tool.js";
@@ -32,4 +36,8 @@ export function registerRethunkGitHubTools(server: FastMCP): void {
   registerModulePinHintTool(server);
   registerChangelogDraftTool(server);
   registerWorkflowDispatchTool(server);
+  registerGhAuthStatusTool(server);
+  registerActionsRunsFilterTool(server);
+  registerLabelsSyncTool(server);
+  registerCheckRunCreateTool(server);
 }
