@@ -26,6 +26,13 @@ interface CommitForRelease {
   pr?: { number: number; title: string; labels: string[] };
 }
 
+export interface ArtifactIntegrity {
+  verdict: "ok" | "warn" | "skip";
+  details: string;
+  missingFromChecksum: string[];
+  checksumAsset?: string;
+}
+
 async function fetchHeadCI(
   owner: string,
   repo: string,
@@ -60,6 +67,120 @@ async function fetchHeadCI(
       err instanceof Error ? err.message : String(err),
     );
     return { status: "error_fetching", failedChecks: [] };
+  }
+}
+
+/**
+ * Check artifact integrity for a release.
+ * - If no assets: verdict "skip"
+ * - If checksum asset exists: parse it and verify all other assets are listed
+ * - If assets but no checksum: verdict "warn"
+ */
+async function checkArtifactIntegrity(
+  owner: string,
+  repo: string,
+  releaseId: number,
+  tag: string,
+): Promise<ArtifactIntegrity> {
+  try {
+    const octokit = getOctokit();
+
+    // Fetch all assets for the release
+    const assetsRes = await octokit.repos.listReleaseAssets({
+      owner,
+      repo,
+      release_id: releaseId,
+      per_page: 100,
+    });
+
+    const assets = assetsRes.data;
+    if (assets.length === 0) {
+      return {
+        verdict: "skip",
+        details: "No release assets",
+        missingFromChecksum: [],
+      };
+    }
+
+    // Look for a checksum file (SHA256SUMS, checksums.txt, sha256sums, etc.)
+    const checksumAsset = assets.find((a) => /sha256|checksums|integrity/i.test(a.name));
+
+    if (!checksumAsset) {
+      return {
+        verdict: "warn",
+        details: "No checksum asset found",
+        missingFromChecksum: assets.map((a) => a.name),
+      };
+    }
+
+    // Download and parse the checksum file
+    try {
+      const checksumRes = await octokit.repos.getReleaseAsset({
+        owner,
+        repo,
+        asset_id: checksumAsset.id,
+        headers: { Accept: "application/octet-stream" },
+      });
+
+      // The response.data should be a string (the file content)
+      const checksumContent = String(checksumRes.data);
+
+      // Parse the checksum file — extract asset names
+      // Common formats: "sha256 filename" or "sha256  filename" (with 1 or 2 spaces)
+      const checksumLines = checksumContent.split("\n").filter((line) => line.trim().length > 0);
+
+      const checksummedAssets = new Set<string>();
+      for (const line of checksumLines) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 2) {
+          // Last part is typically the filename
+          const filename = parts[parts.length - 1];
+          if (filename) {
+            checksummedAssets.add(filename);
+          }
+        }
+      }
+
+      // Find assets not in the checksum file
+      const missingFromChecksum = assets
+        .filter((a) => a.name !== checksumAsset.name)
+        .filter((a) => !checksummedAssets.has(a.name))
+        .map((a) => a.name);
+
+      const verdict = missingFromChecksum.length === 0 ? "ok" : "warn";
+      const details =
+        verdict === "ok"
+          ? "All assets covered by checksum file"
+          : `${missingFromChecksum.length} asset(s) not in checksum file`;
+
+      return {
+        verdict,
+        details,
+        missingFromChecksum,
+        checksumAsset: checksumAsset.name,
+      };
+    } catch (parseErr) {
+      console.error(
+        `[checkArtifactIntegrity] Failed to download/parse checksum file ${checksumAsset.name} for ${owner}/${repo} release ${tag}:`,
+        parseErr instanceof Error ? parseErr.message : String(parseErr),
+      );
+      return {
+        verdict: "warn",
+        details: `Failed to parse checksum file: ${parseErr instanceof Error ? parseErr.message : "unknown error"}`,
+        missingFromChecksum: assets.filter((a) => a.name !== checksumAsset.name).map((a) => a.name),
+        checksumAsset: checksumAsset.name,
+      };
+    }
+  } catch (err) {
+    console.error(
+      `[checkArtifactIntegrity] Failed to check artifact integrity for ${owner}/${repo} release ${tag}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+    return {
+      verdict: "warn",
+      details: `Error checking integrity: ${err instanceof Error ? err.message : "unknown error"}`,
+      missingFromChecksum: [],
+    };
   }
 }
 
@@ -153,7 +274,21 @@ export function registerReleaseReadinessTool(server: FastMCP): void {
           changedFiles: cmp.data.files?.length ?? 0,
         };
 
-        const result = { base, head, aheadBy, headCi: ciStatus, commits, stats };
+        // Check artifact integrity if the base ref is a release tag
+        let artifactIntegrity: ArtifactIntegrity | undefined;
+        try {
+          const releaseRes = await octokit.repos.getReleaseByTag({ owner, repo, tag: base });
+          artifactIntegrity = await checkArtifactIntegrity(owner, repo, releaseRes.data.id, base);
+        } catch (_err) {
+          // base is not a release tag, or API error — skip integrity check
+          artifactIntegrity = {
+            verdict: "skip",
+            details: "Base ref is not a release tag",
+            missingFromChecksum: [],
+          };
+        }
+
+        const result = { base, head, aheadBy, headCi: ciStatus, commits, stats, artifactIntegrity };
 
         if (args.format === "json") return jsonRespond(result);
 
@@ -170,7 +305,22 @@ export function registerReleaseReadinessTool(server: FastMCP): void {
             : ciStatus.status === "not_configured"
               ? "CI: not configured"
               : `CI: failing (${ciStatus.failedChecks.map((c) => c.name).join(", ")})`;
-        lines.push(ciState, "");
+        lines.push(ciState);
+
+        // Add artifact integrity status
+        if (artifactIntegrity.verdict === "ok") {
+          lines.push("Artifacts: integrity verified");
+        } else if (artifactIntegrity.verdict === "warn") {
+          const missing =
+            artifactIntegrity.missingFromChecksum.length > 0
+              ? ` (${artifactIntegrity.missingFromChecksum.length} uncovered)`
+              : "";
+          lines.push(`Artifacts: ⚠ ${artifactIntegrity.details}${missing}`);
+        } else {
+          lines.push("Artifacts: skipped");
+        }
+
+        lines.push("");
 
         if (commits.length === 0) {
           lines.push("*(no commits)*");
