@@ -82,8 +82,8 @@ export function registerChangelogDraftTool(server: FastMCP): void {
         }
 
         if (!base) {
-          base = await fetchLatestSemverTag(owner, repo);
-          if (!base) {
+          const fetchedTag = await fetchLatestSemverTag(owner, repo);
+          if (fetchedTag === null) {
             return errorRespond(
               mkError(
                 "NOT_FOUND",
@@ -92,6 +92,7 @@ export function registerChangelogDraftTool(server: FastMCP): void {
               ),
             );
           }
+          base = fetchedTag;
         }
 
         const cmp = await octokit.repos.compareCommitsWithBasehead({

@@ -226,18 +226,11 @@ export async function fetchPRMetadata(
 
 /**
  * Return the most recent semver tag (vX.Y.Z or X.Y.Z) in a repo.
- * Returns `undefined` when no matching tag exists or the request fails.
+ * Returns `null` when no matching tag exists. Throws on API errors.
  */
-export async function fetchLatestSemverTag(
-  owner: string,
-  repo: string,
-): Promise<string | undefined> {
-  try {
-    const octokit = getOctokit();
-    const res = await octokit.repos.listTags({ owner, repo, per_page: 20 });
-    const semverRe = /^v?\d+\.\d+\.\d+$/;
-    return res.data.filter((t) => semverRe.test(t.name))[0]?.name;
-  } catch {
-    return undefined;
-  }
+export async function fetchLatestSemverTag(owner: string, repo: string): Promise<string | null> {
+  const octokit = getOctokit();
+  const res = await octokit.repos.listTags({ owner, repo, per_page: 20 });
+  const semverRe = /^v?\d+\.\d+\.\d+$/;
+  return res.data.filter((t) => semverRe.test(t.name))[0]?.name ?? null;
 }
