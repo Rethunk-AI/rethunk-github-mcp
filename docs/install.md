@@ -70,6 +70,16 @@ Across clients you always provide:
 
 Register the server under a stable name (this documentation uses **`rethunk-github`**). Tools appear as `{serverName}_{toolName}` (e.g. `rethunk-github_repo_status`).
 
+### Environment variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| **`GITHUB_TOKEN`** | (required) | GitHub personal access token. Required scopes: `repo`, `read:org` (for `org_pulse`). |
+| **`GH_TOKEN`** | (fallback) | Alternative to `GITHUB_TOKEN` if using `gh` CLI authentication. |
+| **`GITHUB_API_URL`** | `https://api.github.com` | GitHub REST API base URL (for GitHub Enterprise). |
+| **`GITHUB_GRAPHQL_URL`** | (auto) | GitHub GraphQL endpoint (for GitHub Enterprise; defaults to REST API URL + `/graphql`). |
+| **`GITHUB_API_PARALLELISM`** | `4` | Concurrency limit for API calls. Lower if rate-limited; raise if on a fast connection. |
+
 ## Cursor
 
 **User scope:** `~/.cursor/mcp.json`. **Project scope:** `.cursor/mcp.json`.
@@ -180,5 +190,5 @@ For contributors working inside a clone of [rethunk-github-mcp](https://github.c
 | Tools missing / stale | Restart the MCP host or use its "reload MCP / reset tools" action. |
 | `npx` / `bun` not found | Install Node >= 22 or Bun; use full paths in config if `PATH` is minimal. |
 | `org_not_found` | Verify the org login; the token needs `read:org` scope for org access. |
-| Rate limits | GitHub API has rate limits (5,000/hr REST, 5,000 points/hr GraphQL). Reduce `maxRepos`/`maxResults` if hitting limits. |
+| Rate limits | GitHub API has rate limits (5,000/hr REST, 5,000 points/hr GraphQL). Reduce `maxRepos`/`maxResults` if hitting limits. Set `GITHUB_API_PARALLELISM` (default `4`) lower for rate-limited environments. |
 | GitHub Enterprise | Set `GITHUB_API_URL` (and optionally `GITHUB_GRAPHQL_URL`) in the `env` block. |
