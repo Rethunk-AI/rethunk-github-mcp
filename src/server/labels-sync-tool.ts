@@ -1,6 +1,6 @@
 import type { FastMCP } from "fastmcp";
 import { z } from "zod";
-import { classifyError, getOctokit } from "./github-client.js";
+import { classifyError, getOctokit, parallelApi } from "./github-client.js";
 import { errorRespond, jsonRespond } from "./json.js";
 
 export interface LabelInput {
@@ -64,8 +64,8 @@ export function registerLabelsSyncTool(server: FastMCP): void {
 
         const providedNames = new Set(labels.map((l) => l.name.toLowerCase()));
 
-        // Create or update labels
-        for (const label of labels) {
+        // Create or update labels in parallel
+        await parallelApi(labels, async (label) => {
           const existing = existingLabels.get(label.name.toLowerCase());
           const normalizedColor = label.color.replace(/^#/, "");
 
@@ -99,20 +99,21 @@ export function registerLabelsSyncTool(server: FastMCP): void {
             });
             result.created.push(label.name);
           }
-        }
+        });
 
-        // Delete extra labels if requested
+        // Delete extra labels if requested (in parallel)
         if (deleteExtra) {
-          for (const [lowerName, label] of existingLabels) {
-            if (!providedNames.has(lowerName)) {
-              await octokit.issues.deleteLabel({
-                owner,
-                repo,
-                name: label.name,
-              });
-              result.deleted.push(label.name);
-            }
-          }
+          const labelsToDelete = Array.from(existingLabels.entries()).filter(
+            ([lowerName]) => !providedNames.has(lowerName),
+          );
+          await parallelApi(labelsToDelete, async ([, label]) => {
+            await octokit.issues.deleteLabel({
+              owner,
+              repo,
+              name: label.name,
+            });
+            result.deleted.push(label.name);
+          });
         }
 
         return jsonRespond(result);

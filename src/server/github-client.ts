@@ -68,7 +68,7 @@ export async function asyncPool<T, R>(
   return results;
 }
 
-const GITHUB_API_PARALLELISM = parseInt(process.env.GITHUB_API_PARALLELISM ?? "4", 10);
+export const GITHUB_API_PARALLELISM = parseInt(process.env.GITHUB_API_PARALLELISM ?? "4", 10);
 
 /** Convenience: run API calls in parallel with default concurrency. */
 export async function parallelApi<T, R>(
