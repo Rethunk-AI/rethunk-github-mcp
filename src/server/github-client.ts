@@ -214,8 +214,12 @@ export async function fetchPRMetadata(
       const pr = data.repository[`pr${n}`];
       if (pr) map.set(n, pr);
     }
-  } catch {
-    // PR resolution is best-effort
+  } catch (err) {
+    // PR resolution is best-effort; classify and log errors for debugging
+    const classified = classifyError(err);
+    console.error(
+      `[fetchPRMetadata] Error fetching PR metadata for ${owner}/${repo} (PRs: ${batch.join(", ")}): ${classified.code} — ${classified.message}`,
+    );
   }
   return map;
 }
