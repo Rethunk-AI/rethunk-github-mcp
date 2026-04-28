@@ -3,6 +3,7 @@ import type { FastMCP } from "fastmcp";
 import { registerChangelogDraftTool } from "./changelog-draft-tool.js";
 import { registerCiDiagnosisTool } from "./ci-diagnosis-tool.js";
 import { registerEcosystemActivityTool } from "./ecosystem-activity-tool.js";
+import { registerIssueFromTemplateTool } from "./issue-from-template-tool.js";
 import { registerModulePinHintTool } from "./module-pin-hint-tool.js";
 import { registerMyWorkTool } from "./my-work-tool.js";
 import { registerOrgPulseTool } from "./org-pulse-tool.js";
@@ -21,6 +22,7 @@ export function registerRethunkGitHubTools(server: FastMCP): void {
   registerPrPreflightTool(server);
   registerPrCommentBatchTool(server);
   registerPrCreateTool(server);
+  registerIssueFromTemplateTool(server);
   registerReleaseReadinessTool(server);
   registerReleaseCreateTool(server);
   registerCiDiagnosisTool(server);
