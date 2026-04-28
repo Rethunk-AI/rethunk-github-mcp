@@ -24,6 +24,18 @@ interface CheckContext {
   state?: string;
 }
 
+interface OversizedCommit {
+  sha: string;
+  message: string;
+  filesChanged: number;
+}
+
+interface CommitGranularityResult {
+  verdict: "ok" | "warn" | "fail";
+  details: string;
+  oversizedCommits: OversizedCommit[];
+}
+
 interface PRPreflightData {
   repository: {
     pullRequest: {
@@ -86,6 +98,82 @@ query PRPreflight($owner: String!, $repo: String!, $number: Int!) {
   }
 }`;
 
+/**
+ * Check commit granularity for a PR: flag commits that touch more than 15 files.
+ * Returns a verdict and list of oversized commits.
+ */
+async function checkCommitGranularity(
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<CommitGranularityResult> {
+  const octokit = getOctokit();
+
+  try {
+    // Fetch all commits for the PR
+    const commitsRes = await octokit.pulls.listCommits({
+      owner,
+      repo,
+      pull_number: prNumber,
+      per_page: 250,
+    });
+
+    const oversizedCommits: OversizedCommit[] = [];
+    const OVERSIZED_THRESHOLD = 15;
+
+    // For each commit, check file count by fetching the commit detail
+    for (const commit of commitsRes.data) {
+      let filesChanged = 0;
+      try {
+        const commitDetail = await octokit.repos.getCommit({
+          owner,
+          repo,
+          ref: commit.sha,
+        });
+        filesChanged = commitDetail.data.files?.length ?? 0;
+      } catch (err) {
+        // Fallback to 0 if we can't fetch commit details
+        console.warn(
+          `[checkCommitGranularity] Could not fetch details for commit ${commit.sha}:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+
+      if (filesChanged > OVERSIZED_THRESHOLD) {
+        oversizedCommits.push({
+          sha: commit.sha.substring(0, 7),
+          message: commit.commit.message.split("\n")[0] || "(no message)",
+          filesChanged,
+        });
+      }
+    }
+
+    if (oversizedCommits.length === 0) {
+      return {
+        verdict: "ok",
+        details: `All ${commitsRes.data.length} commits touch ≤15 files.`,
+        oversizedCommits: [],
+      };
+    }
+
+    return {
+      verdict: "warn",
+      details: `${oversizedCommits.length} of ${commitsRes.data.length} commits are over-bundled (>15 files).`,
+      oversizedCommits,
+    };
+  } catch (err) {
+    console.error(
+      `[checkCommitGranularity] Failed to check granularity for ${owner}/${repo}#${prNumber}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+    return {
+      verdict: "ok",
+      details: "Could not check commit granularity.",
+      oversizedCommits: [],
+    };
+  }
+}
+
 /** Resolve a PR ref that may be a number, a URL, or a "owner/repo#N" slug. */
 function parsePrRef(
   ref: string | number | undefined,
@@ -132,6 +220,7 @@ async function checkOnePR(
   behindBase: number;
   labels: string[];
   conflicts: boolean;
+  commitGranularity: CommitGranularityResult;
   error?: { code: string; message: string };
 }> {
   const octokit = getOctokit();
@@ -158,6 +247,7 @@ async function checkOnePR(
       behindBase: 0,
       labels: [],
       conflicts: false,
+      commitGranularity: { verdict: "ok", details: "PR not found", oversizedCommits: [] },
       error: { code: "NOT_FOUND", message: `PR ${owner}/${repo}#${prNumber} not found.` },
     };
   }
@@ -238,6 +328,9 @@ async function checkOnePR(
     reasons.push(`${behindBy} commits behind ${pr.baseRefName}`);
   }
 
+  // Fetch commit granularity check
+  const commitGranularity = await checkCommitGranularity(owner, repo, prNumber);
+
   return {
     number: prNumber,
     title: pr.title,
@@ -252,6 +345,7 @@ async function checkOnePR(
     behindBase: behindBy,
     labels,
     conflicts: pr.mergeable === "CONFLICTING",
+    commitGranularity,
   };
 }
 
@@ -439,6 +533,11 @@ export function registerPrPreflightTool(server: FastMCP): void {
               behindBase: 0,
               labels: [],
               conflicts: false,
+              commitGranularity: {
+                verdict: "ok",
+                details: "Could not check",
+                oversizedCommits: [],
+              },
               error: classifyError(err),
             })),
           ),
@@ -526,12 +625,22 @@ export function registerPrPreflightTool(server: FastMCP): void {
           }
 
           md += `| Conflicts | ${result.mergeable === "CONFLICTING" ? "Has conflicts" : "None"} |\n`;
+          md += `| Commit Granularity | ${result.commitGranularity.verdict === "ok" ? "OK" : "⚠️ Oversized commits"} |\n`;
           if (pendingReviewers.length > 0) {
             md += `| Pending reviewers | ${pendingReviewers.join(", ")} |\n`;
           }
           if (labels.length > 0) {
             md += `| Labels | ${labels.join(", ")} |\n`;
           }
+
+          // Append detailed commit granularity info if there are oversized commits
+          if (result.commitGranularity.oversizedCommits.length > 0) {
+            md += `\n### Oversized Commits\n${result.commitGranularity.details}\n\n`;
+            for (const commit of result.commitGranularity.oversizedCommits) {
+              md += `- \`${commit.sha}\`: ${commit.message} (${commit.filesChanged} files)\n`;
+            }
+          }
+
           return md;
         });
 
