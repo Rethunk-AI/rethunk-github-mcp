@@ -26,9 +26,50 @@ Set the token in your MCP client's `env` block — see [docs/install.md](docs/in
 
 **GitHub Enterprise:** set `GITHUB_API_URL` (defaults to `https://api.github.com`) and optionally `GITHUB_GRAPHQL_URL` in the `env` block.
 
-## Installation
+## Installation and running
 
-**Package install and MCP clients:** **[docs/install.md](docs/install.md)**.
+Full per-client wiring (Cursor, VS Code, Claude Desktop, Zed, CLI): **[docs/install.md](docs/install.md)**.
+
+Quick start — the server speaks MCP over stdio. Start it with any of:
+
+```bash
+npx -y @rethunk/github-mcp          # via npmjs (Node ≥ 22)
+bunx @rethunk/github-mcp            # via Bun
+rethunk-github-mcp                   # if installed globally
+```
+
+Minimal MCP client JSON (server name `rethunk-github`):
+
+```json
+{
+  "mcpServers": {
+    "rethunk-github": {
+      "command": "npx",
+      "args": ["-y", "@rethunk/github-mcp"],
+      "env": { "GITHUB_TOKEN": "ghp_..." }
+    }
+  }
+}
+```
+
+**GitHub Enterprise:** add `GITHUB_API_URL` (and optionally `GITHUB_GRAPHQL_URL`) to the `env` block.
+
+## Common operations
+
+| Goal | Tool |
+|------|------|
+| Dashboard across multiple repos | `repo_status` (up to 64 repos per call) |
+| My open PRs and review queue | `my_work` |
+| Pre-merge safety check | `pr_preflight` |
+| Why is CI red? | `ci_diagnosis` |
+| What would ship if we release now? | `release_readiness` |
+| Org-wide failing CI / stale PRs | `org_pulse` |
+| How far are my pins behind upstream? | `pin_drift` |
+| Recent merged commits across repos | `ecosystem_activity` |
+| Go pseudo-version for a commit | `module_pin_hint` |
+| Draft CHANGELOG from unreleased commits | `changelog_draft` |
+
+All tools are **read-only**. Default output is JSON; pass `format: "markdown"` for human-readable output. Full parameter reference: **[docs/mcp-tools.md](docs/mcp-tools.md)**.
 
 ## Development
 
