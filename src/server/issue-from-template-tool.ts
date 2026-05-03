@@ -105,15 +105,14 @@ export async function fetchIssueTemplateFileContent(
     path,
   });
 
-  if (!("content" in response.data)) {
+  const data: unknown = response.data;
+  if (typeof data !== "object" || data === null || Array.isArray(data) || !("content" in data)) {
     throw new Error(`Template at ${path} is not a file`);
   }
 
+  const raw = (data as { content?: string }).content;
   // Decode base64 content
-  const content = Buffer.from(
-    (response.data as { content?: string }).content || "",
-    "base64",
-  ).toString("utf-8");
+  const content = Buffer.from(raw || "", "base64").toString("utf-8");
   return content;
 }
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`fetchIssueTemplateFileContent`**: narrow **`repos.getContent`** payload before reading **`content`** so **`tsc`** accepts the Octokit **`unknown`** response shape in CI.
+
 ### Added
 
 - **`bunfig.toml`** — `coveragePathIgnorePatterns` for `scripts/**` so line coverage reflects product code under `src/`, not CLI entrypoints.
