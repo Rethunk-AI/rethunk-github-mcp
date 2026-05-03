@@ -1,12 +1,7 @@
 import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
-import {
-  classifyError,
-  graphqlQuery,
-  parallelApi,
-  resolveLocalRepoRemote,
-} from "./github-client.js";
+import * as gh from "./github-client.js";
 import {
   errorRespond,
   jsonRespond,
@@ -96,7 +91,7 @@ async function fetchRepoCommits(
         }
       }`;
 
-      const data = await graphqlQuery<HistoryQueryResult>(query, {
+      const data = await gh.graphqlQuery<HistoryQueryResult>(query, {
         owner,
         repo,
         since: sinceIso,
@@ -112,7 +107,7 @@ async function fetchRepoCommits(
       `[fetchRepoCommits] Failed to fetch commits for ${owner}/${repo}:`,
       err instanceof Error ? err.message : String(err),
     );
-    return { owner, repo, commitCount: 0, error: classifyError(err), commits: [] };
+    return { owner, repo, commitCount: 0, error: gh.classifyError(err), commits: [] };
   }
 
   const sorted = [...allNodes.values()].sort(
@@ -181,12 +176,12 @@ export function registerEcosystemActivityTool(server: FastMCP): void {
       const sinceIso = parseSince(args.since);
       const grepRe = args.grep ? new RegExp(args.grep, "i") : undefined;
 
-      const repoResults = await parallelApi(args.repos, async (repoRef) => {
+      const repoResults = await gh.parallelApi(args.repos, async (repoRef) => {
         let owner: string;
         let repo: string;
 
         if ("localPath" in repoRef) {
-          const resolved = resolveLocalRepoRemote(repoRef.localPath);
+          const resolved = gh.resolveLocalRepoRemote(repoRef.localPath);
           if (!resolved) {
             return {
               owner: "unknown",

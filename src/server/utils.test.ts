@@ -4,9 +4,14 @@ import {
   type CheckNode,
   extractFirstPR,
   extractPRNumbers,
+  firstLine,
+  isFailed,
   normalizeFailedChecks,
   parseSince,
+  sha7,
+  sha12,
   tailTruncate,
+  timeAgo,
 } from "./utils.js";
 
 // ---------------------------------------------------------------------------
@@ -72,6 +77,62 @@ describe("parseSince", () => {
 });
 
 // ---------------------------------------------------------------------------
+// firstLine / sha7 / sha12 / timeAgo / isFailed
+// ---------------------------------------------------------------------------
+
+describe("firstLine", () => {
+  test("returns text before first newline", () => {
+    expect(firstLine("alpha\nbeta")).toBe("alpha");
+  });
+
+  test("returns whole string when no newline", () => {
+    expect(firstLine("only")).toBe("only");
+  });
+});
+
+describe("sha7 / sha12", () => {
+  test("prefixes full shas", () => {
+    expect(sha7("abcdef1234567890")).toBe("abcdef1");
+    expect(sha12("abcdef0123456789abcd")).toBe("abcdef012345");
+  });
+});
+
+describe("timeAgo", () => {
+  test("returns now for very recent timestamps", () => {
+    expect(timeAgo(new Date().toISOString())).toBe("now");
+  });
+
+  test("returns minutes for sub-hour age", () => {
+    const t = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    expect(timeAgo(t)).toBe("30m ago");
+  });
+
+  test("returns hours for sub-day age", () => {
+    const t = new Date(Date.now() - 3 * 3_600_000).toISOString();
+    expect(timeAgo(t)).toBe("3h ago");
+  });
+
+  test("returns days for sub-week age", () => {
+    const t = new Date(Date.now() - 3 * 86_400_000).toISOString();
+    expect(timeAgo(t)).toBe("3d ago");
+  });
+
+  test("returns weeks for older dates", () => {
+    const t = new Date(Date.now() - 10 * 604_800_000).toISOString();
+    expect(timeAgo(t)).toBe("10w ago");
+  });
+});
+
+describe("isFailed", () => {
+  test("detects failure conclusions case-sensitively", () => {
+    expect(isFailed("failure")).toBe(true);
+    expect(isFailed("FAILURE")).toBe(true);
+    expect(isFailed("SUCCESS")).toBe(false);
+    expect(isFailed(undefined)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // extractPRNumbers
 // ---------------------------------------------------------------------------
 
@@ -108,6 +169,10 @@ describe("extractFirstPR", () => {
 
   test("returns only the first when multiple references exist", () => {
     expect(extractFirstPR("Merge (#3) and (#8)")).toBe(3);
+  });
+
+  test("returns undefined when PR token is not numeric", () => {
+    expect(extractFirstPR("(#abc)")).toBeUndefined();
   });
 });
 

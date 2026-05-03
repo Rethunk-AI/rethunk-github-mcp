@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`bunfig.toml`** — `coveragePathIgnorePatterns` for `scripts/**` so line coverage reflects product code under `src/`, not CLI entrypoints.
+- **Unit tests** for issue-template helpers (`substituteVariables`, `findTemplate`, directory/file fetch with stub Octokit), **`github-auth`** `gh` fallback paths (via `spyOn`), **`json.readPackageVersion` / `readMcpServerVersion`** error branches, **utils** (`firstLine`, `sha7`/`sha12`, `timeAgo`, `isFailed`), **actions_runs_filter** optional filters, and **ecosystem_activity** GraphQL paths (mocked).
+
+### Changed
+
+- **`ecosystem-activity-tool`** now calls **`./github-client.js`** through a namespace import (`import * as gh`) so tests can **`spyOn(gh, "graphqlQuery")`** without rebinding issues from direct named imports.
+- **`github-auth`** uses **`import * as childProcess`** so **`spyOn(childProcess, "execFileSync")`** works in tests.
+
 ## [1.0.4] — 2026-04-26
 
 ### CI

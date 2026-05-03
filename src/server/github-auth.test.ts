@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as childProcess from "node:child_process";
 
 import { gateAuth, resetAuthCache } from "./github-auth.js";
 
@@ -69,6 +70,54 @@ describe("gateAuth", () => {
     } else {
       delete process.env.GH_TOKEN;
     }
+    resetAuthCache();
+  });
+
+  test("when env tokens missing and gh auth token throws, returns AUTH_MISSING", () => {
+    const origGH = process.env.GITHUB_TOKEN;
+    const origGHT = process.env.GH_TOKEN;
+    delete process.env.GITHUB_TOKEN;
+    delete process.env.GH_TOKEN;
+    resetAuthCache();
+
+    const spy = spyOn(childProcess, "execFileSync").mockImplementation(() => {
+      throw new Error("not authenticated");
+    });
+
+    const result = gateAuth();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.envelope.code).toBe("AUTH_MISSING");
+    }
+
+    spy.mockRestore();
+    if (origGH !== undefined) process.env.GITHUB_TOKEN = origGH;
+    else delete process.env.GITHUB_TOKEN;
+    if (origGHT !== undefined) process.env.GH_TOKEN = origGHT;
+    else delete process.env.GH_TOKEN;
+    resetAuthCache();
+  });
+
+  test("when gh auth token returns only whitespace, returns AUTH_MISSING", () => {
+    const origGH = process.env.GITHUB_TOKEN;
+    const origGHT = process.env.GH_TOKEN;
+    delete process.env.GITHUB_TOKEN;
+    delete process.env.GH_TOKEN;
+    resetAuthCache();
+
+    const spy = spyOn(childProcess, "execFileSync").mockImplementation(() => "  \n");
+
+    const result = gateAuth();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.envelope.code).toBe("AUTH_MISSING");
+    }
+
+    spy.mockRestore();
+    if (origGH !== undefined) process.env.GITHUB_TOKEN = origGH;
+    else delete process.env.GITHUB_TOKEN;
+    if (origGHT !== undefined) process.env.GH_TOKEN = origGHT;
+    else delete process.env.GH_TOKEN;
     resetAuthCache();
   });
 });

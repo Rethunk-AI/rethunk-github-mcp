@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { registerEcosystemActivityTool } from "./ecosystem-activity-tool.js";
 import { resetAuthCache } from "./github-auth.js";
+import * as githubClient from "./github-client.js";
 import { MAX_REPOS_PER_REQUEST } from "./schemas.js";
 import { captureTool } from "./test-harness.js";
 
@@ -104,5 +105,114 @@ describe("ecosystem_activity tool (captureTool)", () => {
     expect(text).toContain("*(no commits in range)*");
     expect(text).toContain("## Errors");
     expect(text).toContain("LOCAL_REPO_NO_REMOTE");
+  });
+});
+
+describe("ecosystem_activity with mocked GraphQL", () => {
+  test("aggregates remote repo commits in JSON format", async () => {
+    const sampleHistory = {
+      repository: {
+        defaultBranchRef: {
+          target: {
+            history: {
+              nodes: [
+                {
+                  oid: `${"c".repeat(39)}f`,
+                  messageHeadline: "fix crash (#77)",
+                  committedDate: "2024-02-02T02:02:02Z",
+                  author: { name: "Pat", user: { login: "pat" } },
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+
+    const spy = spyOn(githubClient, "graphqlQuery").mockResolvedValue(sampleHistory as never);
+    const run = captureTool(registerEcosystemActivityTool);
+    const text = await run({
+      repos: [{ owner: "Acme", repo: "svc" }],
+      since: "2020-01-01T00:00:00Z",
+      format: "json",
+    });
+    spy.mockRestore();
+
+    const parsed = JSON.parse(text) as {
+      commits: Array<{ owner: string; repo: string; author: string; pr: unknown }>;
+      summary: { totalCommits: number };
+    };
+    expect(parsed.summary.totalCommits).toBe(1);
+    expect(parsed.commits[0]?.owner).toBe("Acme");
+    expect(parsed.commits[0]?.repo).toBe("svc");
+    expect(parsed.commits[0]?.author).toBe("pat");
+    expect(parsed.commits[0]?.pr).toEqual({ number: 77 });
+  });
+
+  test("renders markdown table and filters by grep", async () => {
+    const spy = spyOn(githubClient, "graphqlQuery").mockResolvedValue({
+      repository: {
+        defaultBranchRef: {
+          target: {
+            history: {
+              nodes: [
+                {
+                  oid: `${"d".repeat(39)}e`,
+                  messageHeadline: "noise",
+                  committedDate: "2024-02-03T00:00:00Z",
+                  author: { name: "OnlyName", user: null },
+                },
+                {
+                  oid: `${"e".repeat(39)}d`,
+                  messageHeadline: "feat important",
+                  committedDate: "2024-02-04T00:00:00Z",
+                  author: { name: "", user: undefined },
+                },
+              ],
+            },
+          },
+        },
+      },
+    } as never);
+
+    const run = captureTool(registerEcosystemActivityTool);
+    const text = await run({
+      repos: [{ owner: "O", repo: "p" }],
+      since: "2020-01-01T00:00:00Z",
+      grep: "feat",
+      format: "markdown",
+    });
+    spy.mockRestore();
+
+    expect(text).toContain("| Date | Repo |");
+    expect(text).toContain("feat important");
+    expect(text).not.toContain("noise");
+  });
+
+  test("dedupes commits when multiple paths return the same SHA", async () => {
+    const node = {
+      oid: `${"f".repeat(39)}a`,
+      messageHeadline: "dup",
+      committedDate: "2024-02-05T00:00:00Z",
+      author: { name: "x", user: { login: "x" } },
+    };
+    const spy = spyOn(githubClient, "graphqlQuery").mockResolvedValue({
+      repository: {
+        defaultBranchRef: { target: { history: { nodes: [node] } } },
+      },
+    } as never);
+
+    const run = captureTool(registerEcosystemActivityTool);
+    const text = await run({
+      repos: [{ owner: "O", repo: "p" }],
+      since: "2020-01-01T00:00:00Z",
+      paths: ["a.ts", "b.ts"],
+      format: "json",
+    });
+    expect(spy.mock.calls.length).toBe(2);
+    spy.mockRestore();
+
+    const parsed = JSON.parse(text) as { summary: { totalCommits: number } };
+    expect(parsed.summary.totalCommits).toBe(1);
   });
 });

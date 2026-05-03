@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as fs from "node:fs";
 
 import {
   errorRespond,
@@ -8,6 +9,7 @@ import {
   mkLocalRepoNoRemote,
   readMcpServerVersion,
   readPackageVersion,
+  resetReadPackageVersionCache,
   spreadDefined,
   truncateLines,
   truncateText,
@@ -25,12 +27,43 @@ describe("readPackageVersion", () => {
     const v = readPackageVersion();
     expect(v).toMatch(/^\d+\.\d+\.\d+/);
   });
+
+  test("returns 0.0.0 when package.json cannot be read", () => {
+    resetReadPackageVersionCache();
+    const spy = spyOn(fs, "readFileSync").mockImplementation(() => {
+      throw new Error("ENOENT");
+    });
+    const v = readPackageVersion();
+    expect(v).toBe("0.0.0");
+    spy.mockRestore();
+    resetReadPackageVersionCache();
+  });
 });
 
 describe("readMcpServerVersion", () => {
   test("returns major.minor.patch format", () => {
     const v = readMcpServerVersion();
     expect(v).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  test("returns 0.0.0 when package version is not semver-shaped", () => {
+    resetReadPackageVersionCache();
+    const spy = spyOn(fs, "readFileSync").mockImplementation(() =>
+      JSON.stringify({ version: "not-a-semver" }),
+    );
+    expect(readMcpServerVersion()).toBe("0.0.0");
+    spy.mockRestore();
+    resetReadPackageVersionCache();
+  });
+
+  test("returns 0.0.0 when package version has fewer than three numeric segments", () => {
+    resetReadPackageVersionCache();
+    const spy = spyOn(fs, "readFileSync").mockImplementation(() =>
+      JSON.stringify({ version: "1.2" }),
+    );
+    expect(readMcpServerVersion()).toBe("0.0.0");
+    spy.mockRestore();
+    resetReadPackageVersionCache();
   });
 });
 

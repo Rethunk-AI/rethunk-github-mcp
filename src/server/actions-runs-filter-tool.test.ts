@@ -96,4 +96,19 @@ describe("actions_runs_filter tool", () => {
       expect(Array.isArray(parsed.runs)).toBe(true);
     }
   });
+
+  test("accepts conclusion and branch filters together", async () => {
+    const text = await run({
+      owner: "Rethunk-AI",
+      repo: "rethunk-github-mcp",
+      conclusion: "success",
+      branch: "main",
+      limit: 3,
+    });
+    const parsed = JSON.parse(text) as { error?: { code: string }; runs?: unknown[] };
+
+    if (!parsed.error && parsed.runs) {
+      expect(Array.isArray(parsed.runs)).toBe(true);
+    }
+  });
 });

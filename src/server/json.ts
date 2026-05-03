@@ -6,6 +6,11 @@ export const MCP_JSON_FORMAT_VERSION = "2" as const;
 
 let _cachedVersion: string | undefined;
 
+/** Clears the package version cache (used by tests). */
+export function resetReadPackageVersionCache(): void {
+  _cachedVersion = undefined;
+}
+
 export function readPackageVersion(): string {
   if (_cachedVersion !== undefined) return _cachedVersion;
   const here = dirname(fileURLToPath(import.meta.url));

@@ -16,18 +16,31 @@ export interface IssueFromTemplateResult {
 }
 
 // ---------------------------------------------------------------------------
-// Helper Functions
+// Helper Functions (exported pieces are covered by unit tests)
 // ---------------------------------------------------------------------------
+
+/** Minimal Octokit surface used by issue-template helpers. */
+export type IssueTemplateOctokit = {
+  repos: {
+    getContent: (params: {
+      owner: string;
+      repo: string;
+      path: string;
+    }) => Promise<{ data: unknown }>;
+  };
+};
+
+export type IssueTemplateEntry = { name: string; path: string };
 
 /**
  * Fetch the list of issue templates from `.github/ISSUE_TEMPLATE/` directory.
  * Returns an array of { name: string, path: string } for each template file.
  */
-async function fetchTemplateList(
-  octokit: ReturnType<typeof getOctokit>,
+export async function fetchIssueTemplateDirectory(
+  octokit: IssueTemplateOctokit,
   owner: string,
   repo: string,
-): Promise<Array<{ name: string; path: string }>> {
+): Promise<IssueTemplateEntry[]> {
   try {
     const response = await octokit.repos.getContent({
       owner,
@@ -52,14 +65,22 @@ async function fetchTemplateList(
   }
 }
 
+async function fetchTemplateList(
+  octokit: ReturnType<typeof getOctokit>,
+  owner: string,
+  repo: string,
+): Promise<IssueTemplateEntry[]> {
+  return fetchIssueTemplateDirectory(octokit, owner, repo);
+}
+
 /**
  * Find a template by filename or partial match.
  * Exact match takes precedence; falls back to case-insensitive partial match.
  */
-function findTemplate(
-  templates: Array<{ name: string; path: string }>,
+export function findTemplate(
+  templates: IssueTemplateEntry[],
   templateName: string,
-): { name: string; path: string } | undefined {
+): IssueTemplateEntry | undefined {
   // Try exact match first
   const exact = templates.find((t) => t.name.toLowerCase() === templateName.toLowerCase());
   if (exact) return exact;
@@ -72,8 +93,8 @@ function findTemplate(
 /**
  * Fetch the content of a specific template file.
  */
-async function fetchTemplateContent(
-  octokit: ReturnType<typeof getOctokit>,
+export async function fetchIssueTemplateFileContent(
+  octokit: IssueTemplateOctokit,
   owner: string,
   repo: string,
   path: string,
@@ -89,14 +110,26 @@ async function fetchTemplateContent(
   }
 
   // Decode base64 content
-  const content = Buffer.from(response.data.content || "", "base64").toString("utf-8");
+  const content = Buffer.from(
+    (response.data as { content?: string }).content || "",
+    "base64",
+  ).toString("utf-8");
   return content;
+}
+
+async function fetchTemplateContent(
+  octokit: ReturnType<typeof getOctokit>,
+  owner: string,
+  repo: string,
+  path: string,
+): Promise<string> {
+  return fetchIssueTemplateFileContent(octokit, owner, repo, path);
 }
 
 /**
  * Substitute template variables in the format {{ variable }} or $variable.
  */
-function substituteVariables(
+export function substituteVariables(
   template: string,
   variables: Record<string, string | number | boolean>,
 ): string {

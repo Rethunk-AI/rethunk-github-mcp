@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import * as childProcess from "node:child_process";
 
 import { type McpErrorEnvelope, mkError } from "./json.js";
 
@@ -33,11 +33,13 @@ export function gateAuth(): AuthResult {
 
   // Fallback: try `gh auth token`
   try {
-    const token = execFileSync("gh", ["auth", "token"], {
-      encoding: "utf8",
-      timeout: 5_000,
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
+    const token = childProcess
+      .execFileSync("gh", ["auth", "token"], {
+        encoding: "utf8",
+        timeout: 5_000,
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+      .trim();
     if (token) {
       cached = { ok: true, token };
       return cached;
