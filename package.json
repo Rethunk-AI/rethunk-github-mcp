@@ -59,7 +59,7 @@
   },
   "dependencies": {
     "fastmcp": "^4.0.1",
-    "zod": "^4.4.2",
+    "zod": "^4.4.3",
     "@octokit/rest": "^22.0.1",
     "@octokit/graphql": "^9.0.3"
   },
