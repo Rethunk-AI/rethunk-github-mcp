@@ -5,22 +5,49 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+<!-- markdownlint-disable MD024 -->
+
 ## [Unreleased]
 
-### Fixed
-
-- **`fetchIssueTemplateFileContent`**: narrow **`repos.getContent`** payload before reading **`content`** so **`tsc`** accepts the Octokit **`unknown`** response shape in CI.
-- **MCP workspace roots** — The server now advertises roots support and local-repo tools (`repo_status`, `ecosystem_activity`, `pin_drift`, `pr_preflight`) can default to the active client workspace root, enabling one global install to follow the caller's project without hard-coded paths.
+## [1.1.0] — 2026-05-07
 
 ### Added
 
-- **`bunfig.toml`** — `coveragePathIgnorePatterns` for `scripts/**` so line coverage reflects product code under `src/`, not CLI entrypoints.
-- **Unit tests** for issue-template helpers (`substituteVariables`, `findTemplate`, directory/file fetch with stub Octokit), **`github-auth`** `gh` fallback paths (via `spyOn`), **`json.readPackageVersion` / `readMcpServerVersion`** error branches, **utils** (`firstLine`, `sha7`/`sha12`, `timeAgo`, `isFailed`), **actions_runs_filter** optional filters, and **ecosystem_activity** GraphQL paths (mocked).
+- Write-capable GitHub tools: **`release_create`**, **`workflow_dispatch`**, **`pr_comment_batch`**, **`pr_create`**, **`issue_from_template`**, **`labels_sync`**, and **`check_run_create`**.
+- Read-only helper tools: **`gh_auth_status`** and **`actions_runs_filter`**.
+- **`release_readiness`** now reports **`artifactIntegrity`** so releases can detect assets missing from checksum manifests.
+- **`pr_preflight`** now surfaces **`commitGranularity`** warnings for over-bundled commits.
+- **`asyncPool`** / **`parallelApi`** fan-out across batch endpoints, reducing multi-item GitHub round-trips.
+- **`specs/`** scaffold (`config.yaml`, `README.md`, and active/done/parked directories) for Citadel/Bastion-style specification tracking.
 
 ### Changed
 
-- **`ecosystem-activity-tool`** now calls **`./github-client.js`** through a namespace import (`import * as gh`) so tests can **`spyOn(gh, "graphqlQuery")`** without rebinding issues from direct named imports.
-- **`github-auth`** uses **`import * as childProcess`** so **`spyOn(childProcess, "execFileSync")`** works in tests.
+- MCP roots support now lets **`repo_status`**, **`pr_preflight`**, **`pin_drift`**, and **`ecosystem_activity`** default to the active client workspace root when the MCP host exposes roots.
+- **`release_create`** now delegates generated release notes to GitHub's native **`generate_release_notes`** flow instead of precomputing them in-process.
+- **`bunfig.toml`** excludes **`scripts/**`** from coverage accounting so the line gate reflects product code under **`src/`**.
+- Repository docs were refreshed around the read/write tool split, auth/install guidance, future-only backlog handling, and spec workflow; committed workspace-specific **`.cursor`** MCP wiring was removed.
+- **`ecosystem-activity-tool`** now imports **`./github-client.js`** as a namespace so tests can reliably **`spyOn(gh, "graphqlQuery")`**, and **`github-auth`** now imports **`node:child_process`** as a namespace for the same reason.
+
+### Fixed
+
+- **`fetchIssueTemplateFileContent`** narrows **`repos.getContent`** responses before reading **`content`**, satisfying Octokit's **`unknown`** payload shape in CI.
+- Newly added mutation tools now gate on auth before making GitHub requests, and **`gh_auth_status`** returns **`authenticated: false`** on missing credentials while still classifying unexpected upstream failures.
+- Bare catch paths now log and classify upstream failures instead of silently swallowing them.
+- **`fetchLatestSemverTag`** and **`fetchPRMetadata`** now distinguish upstream API errors from missing-data cases more reliably.
+
+### Security
+
+- GraphQL queries now use variables for head refs, paths, and **`since`** values, and **`my_work`** no longer interpolates usernames directly into GraphQL search queries.
+- **`SECURITY.md`** now documents token separation, mutation risk, and safe validation practices for write-capable tools.
+
+### Tests
+
+- Added or expanded coverage for write-capable tools, issue-template helpers, auth fallback paths, JSON/version helpers, utility helpers, roots support, and **`ecosystem_activity`** GraphQL behavior.
+- The coverage gate remains **80%**, but now measures product code rather than helper scripts.
+
+### Documentation
+
+- **`README.md`**, **`HUMANS.md`**, **`docs/install.md`**, **`docs/mcp-tools.md`**, **`AGENTS.md`**, **`CONTRIBUTING.md`**, and **`TODO.md`** now describe the current tool surface and repository workflow.
 
 ## [1.0.4] — 2026-04-26
 
@@ -299,6 +326,7 @@ Initial public tool surface: `repo_status`, `my_work`, `pr_preflight`,
 `release_readiness`, `ci_diagnosis`, `org_pulse`, `pin_drift`,
 `ecosystem_activity`, `module_pin_hint`.
 
+[1.1.0]: https://github.com/Rethunk-AI/rethunk-github-mcp/compare/v1.0.4...v1.1.0
 [1.0.4]: https://github.com/Rethunk-AI/rethunk-github-mcp/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/Rethunk-AI/rethunk-github-mcp/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/Rethunk-AI/rethunk-github-mcp/compare/v1.0.1...v1.0.2
@@ -307,3 +335,5 @@ Initial public tool surface: `repo_status`, `my_work`, `pr_preflight`,
 [0.3.0]: https://github.com/Rethunk-AI/rethunk-github-mcp/releases/tag/v0.3.0
 [0.2.1]: https://github.com/Rethunk-AI/rethunk-github-mcp/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Rethunk-AI/rethunk-github-mcp/releases/tag/v0.2.0
+
+<!-- markdownlint-enable MD024 -->
