@@ -13,9 +13,11 @@ import {
   errorRespond,
   jsonRespond,
   type McpErrorEnvelope,
+  mkError,
   mkLocalRepoNoRemote,
   truncateText,
 } from "./json.js";
+import { resolveOptionalLocalPath } from "./roots.js";
 import { FormatSchema, LocalOrRemoteRepoSchema, MAX_REPOS_PER_REQUEST } from "./schemas.js";
 import { type CheckNode, normalizeFailedChecks, sha7, timeAgo } from "./utils.js";
 
@@ -164,13 +166,14 @@ query DraftCount($q: String!) {
 export function registerRepoStatusTool(server: FastMCP): void {
   server.addTool({
     name: "repo_status",
-    description: `Multi-repo dashboard: HEAD commit, CI status, open PR/issue counts. Accepts up to ${MAX_REPOS_PER_REQUEST} repos; include \`localPath\` for local git state.`,
+    description: `Multi-repo dashboard: HEAD commit, CI status, open PR/issue counts. Accepts up to ${MAX_REPOS_PER_REQUEST} repos; omit repos to use the active MCP workspace root.`,
     annotations: { readOnlyHint: true },
     parameters: z.object({
       repos: z
         .array(LocalOrRemoteRepoSchema)
         .min(1)
         .max(MAX_REPOS_PER_REQUEST)
+        .optional()
         .describe("Repos to query."),
       format: FormatSchema,
     }),
@@ -178,23 +181,36 @@ export function registerRepoStatusTool(server: FastMCP): void {
       const auth = gateAuth();
       if (!auth.ok) return errorRespond(auth.envelope);
 
-      const results = await parallelApi(args.repos, async (repoRef) => {
+      const defaultLocalPath = resolveOptionalLocalPath(server);
+      const repoRefs = args.repos ?? (defaultLocalPath ? [{ localPath: defaultLocalPath }] : []);
+      if (repoRefs.length === 0) {
+        return errorRespond(
+          mkError("VALIDATION", "No repository target provided and no MCP workspace root found.", {
+            suggestedFix:
+              "Open a workspace folder or pass repos: [{ owner, repo }] / [{ localPath }].",
+          }),
+        );
+      }
+
+      const results = await parallelApi(repoRefs, async (repoRef) => {
         let owner: string;
         let repo: string;
         let localState: RepoResult["local"] | undefined;
 
         if ("localPath" in repoRef) {
-          const resolved = resolveLocalRepoRemote(repoRef.localPath);
+          const localPath =
+            resolveOptionalLocalPath(server, repoRef.localPath) ?? repoRef.localPath;
+          const resolved = resolveLocalRepoRemote(localPath);
           if (!resolved) {
             return {
               owner: "unknown",
-              repo: repoRef.localPath,
-              error: mkLocalRepoNoRemote(repoRef.localPath),
+              repo: localPath,
+              error: mkLocalRepoNoRemote(localPath),
             };
           }
           owner = resolved.owner;
           repo = resolved.repo;
-          localState = getLocalGitState(repoRef.localPath);
+          localState = getLocalGitState(localPath);
         } else {
           owner = repoRef.owner;
           repo = repoRef.repo;

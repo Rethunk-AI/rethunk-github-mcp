@@ -47,10 +47,14 @@ const STUB_CONTEXT: AnyRecord = {
 // Fake server
 // ---------------------------------------------------------------------------
 
-function makeFakeServer(): { server: FastMCP; tools: CapturedTool[] } {
+function makeFakeServer(roots: string[] = []): { server: FastMCP; tools: CapturedTool[] } {
   const tools: CapturedTool[] = [];
   const server = {
-    sessions: [],
+    sessions: [
+      {
+        roots: roots.map((uri) => ({ uri })),
+      },
+    ],
     addTool(tool: { name: string; execute: ExecuteFn }) {
       tools.push({ name: tool.name, execute: tool.execute });
     },
@@ -72,9 +76,23 @@ function makeFakeServer(): { server: FastMCP; tools: CapturedTool[] } {
  */
 export function captureTool(
   register: (server: FastMCP) => void,
+  toolName: string,
+  args: AnyRecord,
+  roots?: string[],
+): Promise<string>;
+export function captureTool(
+  register: (server: FastMCP) => void,
   toolName?: string,
-): (args: AnyRecord) => Promise<string> {
-  const { server, tools } = makeFakeServer();
+  args?: undefined,
+  roots?: string[],
+): (args: AnyRecord) => Promise<string>;
+export function captureTool(
+  register: (server: FastMCP) => void,
+  toolName?: string,
+  args?: AnyRecord,
+  roots: string[] = [],
+): ((args: AnyRecord) => Promise<string>) | Promise<string> {
+  const { server, tools } = makeFakeServer(roots);
   register(server);
 
   const pick = toolName ? tools.find((t) => t.name === toolName) : tools[0];
@@ -85,9 +103,10 @@ export function captureTool(
     );
   }
 
-  return async (args: AnyRecord): Promise<string> => {
-    const result = await pick.execute(args, STUB_CONTEXT);
+  const run = async (toolArgs: AnyRecord): Promise<string> => {
+    const result = await pick.execute(toolArgs, STUB_CONTEXT);
     if (typeof result === "string") return result;
     return JSON.stringify(result);
   };
+  return args ? run(args) : run;
 }

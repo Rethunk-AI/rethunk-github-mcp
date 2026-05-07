@@ -7,6 +7,7 @@ import { registerRethunkGitHubTools } from "./server/tools.js";
 const server = new FastMCP({
   name: "rethunk-github",
   version: readMcpServerVersion(),
+  roots: { enabled: true },
 });
 
 registerRethunkGitHubTools(server);

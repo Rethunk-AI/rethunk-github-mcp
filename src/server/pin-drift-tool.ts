@@ -7,7 +7,8 @@ import { z } from "zod";
 import { countBehind, resolveRef } from "./compare-refs.js";
 import { gateAuth } from "./github-auth.js";
 import { classifyError, graphqlQuery, parallelApi, parseGitHubRemoteUrl } from "./github-client.js";
-import { errorRespond, jsonRespond, type McpErrorEnvelope } from "./json.js";
+import { errorRespond, jsonRespond, type McpErrorEnvelope, mkError } from "./json.js";
+import { resolveOptionalLocalPath } from "./roots.js";
 import { FormatSchema } from "./schemas.js";
 import { sha7, sha12 } from "./utils.js";
 
@@ -383,7 +384,10 @@ export function registerPinDriftTool(server: FastMCP): void {
       ".gitmodules, scripts/versions.env, and package.json against upstream default branches.",
     annotations: { readOnlyHint: true },
     parameters: z.object({
-      localPath: z.string().describe("Absolute path to the local repo to audit."),
+      localPath: z
+        .string()
+        .optional()
+        .describe("Local repo to audit. Defaults to the active MCP workspace root."),
       pinFiles: z
         .array(z.string())
         .optional()
@@ -404,7 +408,15 @@ export function registerPinDriftTool(server: FastMCP): void {
       const auth = gateAuth();
       if (!auth.ok) return errorRespond(auth.envelope);
 
-      const { localPath, ownerAllowlist, grep } = args;
+      const localPath = resolveOptionalLocalPath(server, args.localPath);
+      if (!localPath) {
+        return errorRespond(
+          mkError("VALIDATION", "No localPath provided and no MCP workspace root found.", {
+            suggestedFix: "Open a workspace folder or pass localPath.",
+          }),
+        );
+      }
+      const { ownerAllowlist, grep } = args;
       const grepRe = grep ? new RegExp(grep, "i") : undefined;
 
       // Collect pins from each source

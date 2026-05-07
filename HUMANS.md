@@ -71,6 +71,8 @@ Minimal MCP client JSON (server name `rethunk-github`):
 
 All tools are **read-only**. Default output is JSON; pass `format: "markdown"` for human-readable output. Full parameter reference: **[docs/mcp-tools.md](docs/mcp-tools.md)**.
 
+Local-repo tools automatically use the active MCP workspace root when supported by the client, so one user/global install can follow whichever project is open. Pass `localPath`, `owner`/`repo`, or `repos` only when you need to override that default.
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, build commands, git hooks, commit conventions, CI, and how to add a tool.

@@ -8,6 +8,7 @@ import {
   resolveLocalRepoRemote,
 } from "./github-client.js";
 import { errorRespond, jsonRespond, mkError, mkLocalRepoNoRemote } from "./json.js";
+import { resolveOptionalLocalPath } from "./roots.js";
 import { FormatSchema, MaxLogLinesSchema } from "./schemas.js";
 import { isFailed, tailTruncate } from "./utils.js";
 
@@ -425,7 +426,7 @@ export function registerPrPreflightTool(server: FastMCP): void {
     description:
       "Pre-merge safety check: mergeable state, reviews, CI status, behind-base count, and a computed safe-to-merge verdict. " +
       "Pass a single `number` or an array `numbers` to batch-check multiple PRs. " +
-      "Accepts owner+repo OR localPath (auto-detects from git remote). " +
+      "Accepts owner+repo OR localPath (auto-detects from git remote); defaults to the active MCP workspace root. " +
       "The `ref` parameter accepts a PR number, GitHub PR URL, or owner/repo#N slug. " +
       "Set includeLogs:true to also fetch truncated CI logs for failing jobs in one call.",
     annotations: { readOnlyHint: true },
@@ -470,10 +471,11 @@ export function registerPrPreflightTool(server: FastMCP): void {
       let owner: string;
       let repo: string;
 
-      if (args.localPath) {
-        const resolved = resolveLocalRepoRemote(args.localPath);
+      const localPath = resolveOptionalLocalPath(server, args.localPath);
+      if (localPath) {
+        const resolved = resolveLocalRepoRemote(localPath);
         if (!resolved) {
-          return errorRespond(mkLocalRepoNoRemote(args.localPath));
+          return errorRespond(mkLocalRepoNoRemote(localPath));
         }
         owner = resolved.owner;
         repo = resolved.repo;

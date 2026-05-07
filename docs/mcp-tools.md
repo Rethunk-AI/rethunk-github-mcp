@@ -11,18 +11,22 @@ MCP clients expose tools as `{serverName}_{toolName}`. With the server registere
 
 | Short id | Client id (server `rethunk-github`) | Purpose |
 |----------|--------------------------------------|---------|
-| `repo_status` | `rethunk-github_repo_status` | Multi-repo dashboard: default branch HEAD, CI, open PRs/issues, latest commit. Up to 64 repos per call, optional local git state. Very large batches may hit GitHub rate limits; concurrency stays at 4. |
+| `repo_status` | `rethunk-github_repo_status` | Multi-repo dashboard: default branch HEAD, CI, open PRs/issues, latest commit. Up to 64 repos per call; omit `repos` to use the active MCP workspace root as `{ localPath }`. Very large batches may hit GitHub rate limits; concurrency stays at 4. |
 | `my_work` | `rethunk-github_my_work` | Cross-repo personal queue: authored PRs, review requests, assigned issues. `blockedOnMe` lens for action items. |
-| `pr_preflight` | `rethunk-github_pr_preflight` | Pre-merge safety check: mergeable, reviews, CI, behind-base, computed `safe` verdict with reasons. Batch-capable via `numbers[]`. |
+| `pr_preflight` | `rethunk-github_pr_preflight` | Pre-merge safety check: mergeable, reviews, CI, behind-base, computed `safe` verdict with reasons. Defaults to the active MCP workspace root when owner/repo/localPath are omitted. Batch-capable via `numbers[]`. |
 | `release_readiness` | `rethunk-github_release_readiness` | What would ship if we release now? Unreleased commits, associated PRs, CI on head, diff stats. Auto-picks latest semver tag as base. |
 | `ci_diagnosis` | `rethunk-github_ci_diagnosis` | Why is CI red? Resolves failed run, extracts failed job logs (tail-truncated), trigger commit. |
 | `org_pulse` | `rethunk-github_org_pulse` | Org-wide activity dashboard: failing CI, stale PRs, unreviewed PRs across all recently-active repos. |
-| `pin_drift` | `rethunk-github_pin_drift` | Audit upstream dependency pins in a local repo: how far is each go.mod/submodule/versions.env/package.json pin behind the upstream default branch? Accepts glob patterns for `pinFiles`. |
-| `ecosystem_activity` | `rethunk-github_ecosystem_activity` | Merged chronological commit feed across multiple repos since a given timestamp or relative duration (e.g. `48h`). |
+| `pin_drift` | `rethunk-github_pin_drift` | Audit upstream dependency pins in a local repo: how far is each go.mod/submodule/versions.env/package.json pin behind the upstream default branch? Defaults to the active MCP workspace root; accepts glob patterns for `pinFiles`. |
+| `ecosystem_activity` | `rethunk-github_ecosystem_activity` | Merged chronological commit feed across multiple repos since a given timestamp or relative duration (e.g. `48h`). Omit `repos` to use the active MCP workspace root. |
 | `module_pin_hint` | `rethunk-github_module_pin_hint` | Return the Go pseudo-version string (`v0.0.0-YYYYMMDDHHMMSS-sha12`) for any repo ref. |
 | `changelog_draft` | `rethunk-github_changelog_draft` | Draft a CHANGELOG.md section for unreleased commits, grouped by PR label. Auto-picks latest semver tag as base. |
 
 All tools are **read-only** (`readOnlyHint: true`). Default output is **JSON** (`format: "json"`); pass `format: "markdown"` for human-readable output.
+
+## Workspace root resolution
+
+The server advertises MCP roots support and reads `file://` roots from the client at runtime. Local-repository tools normalize the selected root to its git toplevel, so a single globally installed server follows the project opened in VS Code, Claude Code, Cursor, or any roots-capable MCP client. Explicit arguments still win: pass `localPath` or `repos` when you want a target other than the active workspace.
 
 ## JSON responses
 

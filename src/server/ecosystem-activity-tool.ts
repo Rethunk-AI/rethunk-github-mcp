@@ -6,9 +6,11 @@ import {
   errorRespond,
   jsonRespond,
   type McpErrorEnvelope,
+  mkError,
   mkLocalRepoNoRemote,
   truncateText,
 } from "./json.js";
+import { resolveOptionalLocalPath } from "./roots.js";
 import { FormatSchema, LocalOrRemoteRepoSchema, MAX_REPOS_PER_REQUEST } from "./schemas.js";
 import { extractFirstPR, parseSince, sha7 } from "./utils.js";
 
@@ -153,8 +155,9 @@ export function registerEcosystemActivityTool(server: FastMCP): void {
         .array(LocalOrRemoteRepoSchema)
         .min(1)
         .max(MAX_REPOS_PER_REQUEST)
+        .optional()
         .describe(
-          `1–${MAX_REPOS_PER_REQUEST} repos. Each is { owner, repo } or { localPath }. GitHub may throttle very large batches.`,
+          `1–${MAX_REPOS_PER_REQUEST} repos. Each is { owner, repo } or { localPath }; omit to use the active MCP workspace root.`,
         ),
       since: z.string().describe("ISO8601 or relative duration (e.g. '48h', '7d')."),
       paths: z.array(z.string()).optional().describe("Limit to commits touching these paths."),
@@ -176,18 +179,31 @@ export function registerEcosystemActivityTool(server: FastMCP): void {
       const sinceIso = parseSince(args.since);
       const grepRe = args.grep ? new RegExp(args.grep, "i") : undefined;
 
-      const repoResults = await gh.parallelApi(args.repos, async (repoRef) => {
+      const defaultLocalPath = resolveOptionalLocalPath(server);
+      const repoRefs = args.repos ?? (defaultLocalPath ? [{ localPath: defaultLocalPath }] : []);
+      if (repoRefs.length === 0) {
+        return errorRespond(
+          mkError("VALIDATION", "No repository target provided and no MCP workspace root found.", {
+            suggestedFix:
+              "Open a workspace folder or pass repos: [{ owner, repo }] / [{ localPath }].",
+          }),
+        );
+      }
+
+      const repoResults = await gh.parallelApi(repoRefs, async (repoRef) => {
         let owner: string;
         let repo: string;
 
         if ("localPath" in repoRef) {
-          const resolved = gh.resolveLocalRepoRemote(repoRef.localPath);
+          const localPath =
+            resolveOptionalLocalPath(server, repoRef.localPath) ?? repoRef.localPath;
+          const resolved = gh.resolveLocalRepoRemote(localPath);
           if (!resolved) {
             return {
               owner: "unknown",
-              repo: repoRef.localPath,
+              repo: localPath,
               commitCount: 0,
-              error: mkLocalRepoNoRemote(repoRef.localPath),
+              error: mkLocalRepoNoRemote(localPath),
               commits: [],
             } as RepoCommitResult;
           }

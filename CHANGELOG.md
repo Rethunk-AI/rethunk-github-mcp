@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`fetchIssueTemplateFileContent`**: narrow **`repos.getContent`** payload before reading **`content`** so **`tsc`** accepts the Octokit **`unknown`** response shape in CI.
+- **MCP workspace roots** — The server now advertises roots support and local-repo tools (`repo_status`, `ecosystem_activity`, `pin_drift`, `pr_preflight`) can default to the active client workspace root, enabling one global install to follow the caller's project without hard-coded paths.
 
 ### Added
 
