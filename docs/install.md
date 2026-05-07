@@ -20,12 +20,12 @@ This package is an MCP **stdio** server. The client starts the process and commu
 
 ## Prerequisites
 
-- **GitHub token:** All tools require a GitHub personal access token. Set **`GITHUB_TOKEN`** or **`GH_TOKEN`** in the environment, or have **`gh`** CLI authenticated (`gh auth login`). Required scopes: **`repo`** (for private repos), **`read:org`** (for `org_pulse`). See [mcp-tools.md](mcp-tools.md#authentication).
+- **GitHub token:** All tools except **`gh_auth_status`** require a GitHub personal access token. Set **`GITHUB_TOKEN`** or **`GH_TOKEN`** in the environment, or have **`gh`** CLI authenticated (`gh auth login`). Read-only rollups need repository read access and **`read:org`** for **`org_pulse`**; write-capable tools need equivalent write permission in the target repositories. See [mcp-tools.md](mcp-tools.md#authentication).
 - **Node.js >= 22** if you use **`npx`**, or **Bun** if you use **`bunx`** / **`bun`** (see `package.json` `engines` / `packageManager`).
 
 ## GitHub Packages
 
-Every **version tag** on this repo is published to the **GitHub npm registry** as **`@rethunk-ai/github-mcp`** (scope matches the GitHub org). The **npmjs** package **`@rethunk/github-mcp`** is also maintained and is current as of **v1.0.0**.
+Every **version tag** on this repo is published to the **GitHub npm registry** as **`@rethunk-ai/github-mcp`** (scope matches the GitHub org). The **npmjs** package **`@rethunk/github-mcp`** is also maintained.
 
 1. Create a [GitHub personal access token](https://github.com/settings/tokens) with at least **`read:packages`**.
 2. In **`~/.npmrc`** or the project **`.npmrc`** (do not commit secrets):
@@ -70,10 +70,12 @@ Across clients you always provide:
 
 Register the server under a stable name (this documentation uses **`rethunk-github`**). Tools appear as `{serverName}_{toolName}` (e.g. `rethunk-github_repo_status`).
 
+Roots-capable clients let local-repo read tools (`repo_status`, `pr_preflight`, `pin_drift`, `ecosystem_activity`) default to the active workspace root without hard-coded paths.
+
 ### Environment variables
 
 | Variable | Default | Purpose |
-|----------|---------|---------|
+| ---------- | --------- | --------- |
 | **`GITHUB_TOKEN`** | (required) | GitHub personal access token. Required scopes: `repo`, `read:org` (for `org_pulse`). |
 | **`GH_TOKEN`** | (fallback) | Alternative to `GITHUB_TOKEN` if using `gh` CLI authentication. |
 | **`GITHUB_API_URL`** | `https://api.github.com` | GitHub REST API base URL (for GitHub Enterprise). |
@@ -124,7 +126,7 @@ After editing, reload MCP (Command Palette: reload / restart MCP).
 Config file (create if missing):
 
 | OS | Path |
-|----|------|
+| ---- | ------ |
 | macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
 | Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
 | Linux | `~/.config/Claude/claude_desktop_config.json` |
@@ -180,12 +182,26 @@ For contributors working inside a clone of [rethunk-github-mcp](https://github.c
 1. **Dependencies, build, and CI parity:** **[HUMANS.md](../HUMANS.md)** — *Development*.
 2. **Run the dev server** (no `dist/` required): `GITHUB_TOKEN=ghp_... bun src/server.ts` (stdio MCP).
 
-**MCP registration for a local checkout:** this repo ships `.cursor/mcp.json` using `bun` + `["src/server.ts"]`; open the workspace at the repository root.
+This repository intentionally does **not** commit editor-specific MCP client config. Point your client at the clone explicitly. Example stdio config:
+
+```json
+{
+  "mcpServers": {
+    "rethunk-github": {
+      "command": "bun",
+      "args": ["/absolute/path/to/rethunk-github-mcp/src/server.ts"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_..."
+      }
+    }
+  }
+}
+```
 
 ## Troubleshooting
 
 | Issue | What to try |
-|-------|-------------|
+| ------- | ------------- |
 | `github_auth_missing` | Set `GITHUB_TOKEN` or `GH_TOKEN` in the `env` block of your MCP config, or run `gh auth login`. |
 | Tools missing / stale | Restart the MCP host or use its "reload MCP / reset tools" action. |
 | `npx` / `bun` not found | Install Node >= 22 or Bun; use full paths in config if `PATH` is minimal. |

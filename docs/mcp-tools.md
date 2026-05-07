@@ -1,7 +1,7 @@
 # MCP tools (canonical reference)
 
-Single source of truth for **registered tool ids**, **parameters**, **JSON output shapes**, and **error codes**.
-**Install and MCP clients:** [install.md](install.md). **Dev, CI, publishing:** [HUMANS.md](../HUMANS.md). **Implementation map:** [AGENTS.md](../AGENTS.md).
+Single source of truth for **registered tool ids**, **parameters**, **JSON output shapes**, **error codes**, and **idempotency**.
+**Install and MCP clients:** [install.md](install.md). **Operator guide:** [HUMANS.md](../HUMANS.md). **Implementation map:** [AGENTS.md](../AGENTS.md).
 
 ## Naming
 
@@ -9,24 +9,39 @@ MCP clients expose tools as `{serverName}_{toolName}`. With the server registere
 
 ## Tools
 
-| Short id | Client id (server `rethunk-github`) | Purpose |
-|----------|--------------------------------------|---------|
-| `repo_status` | `rethunk-github_repo_status` | Multi-repo dashboard: default branch HEAD, CI, open PRs/issues, latest commit. Up to 64 repos per call; omit `repos` to use the active MCP workspace root as `{ localPath }`. Very large batches may hit GitHub rate limits; concurrency stays at 4. |
-| `my_work` | `rethunk-github_my_work` | Cross-repo personal queue: authored PRs, review requests, assigned issues. `blockedOnMe` lens for action items. |
-| `pr_preflight` | `rethunk-github_pr_preflight` | Pre-merge safety check: mergeable, reviews, CI, behind-base, computed `safe` verdict with reasons. Defaults to the active MCP workspace root when owner/repo/localPath are omitted. Batch-capable via `numbers[]`. |
-| `release_readiness` | `rethunk-github_release_readiness` | What would ship if we release now? Unreleased commits, associated PRs, CI on head, diff stats. Auto-picks latest semver tag as base. |
-| `ci_diagnosis` | `rethunk-github_ci_diagnosis` | Why is CI red? Resolves failed run, extracts failed job logs (tail-truncated), trigger commit. |
-| `org_pulse` | `rethunk-github_org_pulse` | Org-wide activity dashboard: failing CI, stale PRs, unreviewed PRs across all recently-active repos. |
-| `pin_drift` | `rethunk-github_pin_drift` | Audit upstream dependency pins in a local repo: how far is each go.mod/submodule/versions.env/package.json pin behind the upstream default branch? Defaults to the active MCP workspace root; accepts glob patterns for `pinFiles`. |
-| `ecosystem_activity` | `rethunk-github_ecosystem_activity` | Merged chronological commit feed across multiple repos since a given timestamp or relative duration (e.g. `48h`). Omit `repos` to use the active MCP workspace root. |
-| `module_pin_hint` | `rethunk-github_module_pin_hint` | Return the Go pseudo-version string (`v0.0.0-YYYYMMDDHHMMSS-sha12`) for any repo ref. |
-| `changelog_draft` | `rethunk-github_changelog_draft` | Draft a CHANGELOG.md section for unreleased commits, grouped by PR label. Auto-picks latest semver tag as base. |
+| Short id | Client id (server `rethunk-github`) | Mode | Purpose |
+| ---------- | -------------------------------------- | ------ | --------- |
+| `repo_status` | `rethunk-github_repo_status` | read | Multi-repo dashboard: default branch HEAD, CI, open PRs/issues, latest commit. Up to 64 repos per call; omit `repos` to use the active MCP workspace root. |
+| `my_work` | `rethunk-github_my_work` | read | Cross-repo personal queue: authored PRs, review requests, assigned issues. `blockedOnMe` lens for action items. |
+| `pr_preflight` | `rethunk-github_pr_preflight` | read | Pre-merge safety check: mergeability, reviews, CI, behind-base count, commit granularity, and computed `safe` verdict. |
+| `pr_comment_batch` | `rethunk-github_pr_comment_batch` | write | Submit a single PR review with inline comments in one API call. |
+| `pr_create` | `rethunk-github_pr_create` | write | Create a pull request from an existing head branch. |
+| `issue_from_template` | `rethunk-github_issue_from_template` | write | Create an issue by rendering a repository issue template. |
+| `release_readiness` | `rethunk-github_release_readiness` | read | What would ship if we release now? Unreleased commits, PR metadata, CI on head, diff stats, and release-asset checksum coverage when applicable. |
+| `release_create` | `rethunk-github_release_create` | write | Create a GitHub release with optional GitHub-generated notes. |
+| `ci_diagnosis` | `rethunk-github_ci_diagnosis` | read | Why is CI red? Resolves the failed run, extracts failed job logs, shows trigger commit. |
+| `org_pulse` | `rethunk-github_org_pulse` | read | Org-wide dashboard: failing CI, stale PRs, unreviewed PRs across recently active repos. |
+| `pin_drift` | `rethunk-github_pin_drift` | read | Audit upstream dependency pins in a local repo. Defaults to the active MCP workspace root; accepts glob patterns for `pinFiles`. |
+| `ecosystem_activity` | `rethunk-github_ecosystem_activity` | read | Chronological commit feed across multiple repos since a given timestamp or relative duration. |
+| `module_pin_hint` | `rethunk-github_module_pin_hint` | read | Return the Go pseudo-version string (`v0.0.0-YYYYMMDDHHMMSS-sha12`) for any repo ref. |
+| `changelog_draft` | `rethunk-github_changelog_draft` | read | Draft a `CHANGELOG.md` section for unreleased commits, grouped by PR metadata. |
+| `workflow_dispatch` | `rethunk-github_workflow_dispatch` | write | Trigger a GitHub Actions `workflow_dispatch` event. |
+| `gh_auth_status` | `rethunk-github_gh_auth_status` | read | Check whether the server currently has usable GitHub credentials. |
+| `actions_runs_filter` | `rethunk-github_actions_runs_filter` | read | List and filter GitHub Actions workflow runs. |
+| `labels_sync` | `rethunk-github_labels_sync` | write | Converge a repository's labels to a declared set. |
+| `check_run_create` | `rethunk-github_check_run_create` | write | Publish a synthetic GitHub check run against a commit SHA. |
 
-All tools are **read-only** (`readOnlyHint: true`). Default output is **JSON** (`format: "json"`); pass `format: "markdown"` for human-readable output.
+## Output and mutation model
+
+- Read-only rollup tools with `format` support default to **JSON** and accept `format: "markdown"` for human-readable output.
+- `gh_auth_status` and `actions_runs_filter` are read-only but always return compact JSON.
+- Write-capable tools always return compact JSON and mutate GitHub state.
 
 ## Workspace root resolution
 
-The server advertises MCP roots support and reads `file://` roots from the client at runtime. Local-repository tools normalize the selected root to its git toplevel, so a single globally installed server follows the project opened in VS Code, Claude Code, Cursor, or any roots-capable MCP client. Explicit arguments still win: pass `localPath` or `repos` when you want a target other than the active workspace.
+The server advertises MCP roots support and reads `file://` roots from the client at runtime. Local-repository read tools normalize the selected root to its git toplevel, so a single globally installed server follows the project opened in VS Code, Claude Code, Cursor, or any roots-capable MCP client.
+
+This default applies to `repo_status`, `pr_preflight`, `pin_drift`, and `ecosystem_activity`. Explicit arguments still win: pass `localPath` or `repos` when you want a target other than the active workspace.
 
 ## JSON responses
 
@@ -54,7 +69,7 @@ Agents can decide programmatically whether to retry (e.g. exponential backoff on
 ### Error codes
 
 | Code | Meaning | Retryable |
-|------|---------|-----------|
+| ------ | --------- | ----------- |
 | `AUTH_MISSING` | No `GITHUB_TOKEN`/`GH_TOKEN` and `gh auth token` failed. | no |
 | `AUTH_FAILED` | GitHub rejected the token (HTTP 401). | no |
 | `NOT_FOUND` | Repository, PR, org, ref, or workflow run does not exist (HTTP 404). | no |
@@ -71,9 +86,9 @@ Agents can decide programmatically whether to retry (e.g. exponential backoff on
 
 ### Idempotency
 
-All current tools are **read-only** (`readOnlyHint: true`) and therefore idempotent: calling any tool twice with the same arguments is equivalent to calling it once. There is no server-side state mutation. Safe to retry transparently on `RATE_LIMITED` or `UPSTREAM_FAILURE`.
-
-Future write-capable tools (e.g. a proposed `release_create`) will document their idempotency semantics explicitly in this section.
+- Read-only tools are idempotent.
+- `labels_sync` is convergent: repeating the same desired label set should produce the same repository label state.
+- `workflow_dispatch`, `check_run_create`, `issue_from_template`, `pr_create`, `pr_comment_batch`, and `release_create` are **not** idempotent. Retrying may create additional GitHub state or fail validation because state already exists.
 
 ---
 
@@ -84,8 +99,8 @@ Future write-capable tools (e.g. a proposed `release_create`) will document thei
 **Parameters:**
 
 | Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| `repos` | `(RepoRef \| LocalPath)[]` | yes | — | 1–64 repos. Each is `{ owner, repo }` or `{ localPath }`. |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `repos` | `(RepoRef \| LocalPath)[]` | no | active workspace root | 1–64 repos. Each is `{ owner, repo }` or `{ localPath }`. |
 | `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
 **JSON output:**
@@ -117,7 +132,7 @@ When `localPath` is given, the tool resolves the GitHub remote from `git remote 
 **Parameters:**
 
 | Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
+| ------ | ------ | ---------- | --------- | ------------- |
 | `username` | `string` | no | authenticated user | GitHub username to query. |
 | `maxResults` | `int` | no | `30` | 1–100 results per section. |
 | `blockedOnMe` | `boolean` | no | `false` | When true, filters to items needing your immediate action: authored PRs with CI failure or changes requested, plus all pending review requests. |
@@ -141,10 +156,10 @@ When `localPath` is given, the tool resolves the GitHub remote from `git remote 
 **Parameters:**
 
 | Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| `owner` | `string` | no | — | GitHub owner/org. Not required when `localPath` is set. |
-| `repo` | `string` | no | — | Repository name. Not required when `localPath` is set. |
-| `localPath` | `string` | no | — | Local clone path; auto-detects owner/repo from `git remote get-url origin`. |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `owner` | `string` | no | active workspace root | GitHub owner/org. Not required when `localPath` or workspace roots are available. |
+| `repo` | `string` | no | active workspace root | Repository name. Not required when `localPath` or workspace roots are available. |
+| `localPath` | `string` | no | active workspace root | Local clone path; auto-detects owner/repo from `git remote get-url origin`. |
 | `number` | `int` | no | — | Single PR number. |
 | `numbers` | `int[]` | no | — | Batch of PR numbers to check in one call (alternative to `number`). |
 | `ref` | `string` | no | — | PR number, GitHub PR URL, or `owner/repo#N` slug (alternative to `number`). |
@@ -152,7 +167,7 @@ When `localPath` is given, the tool resolves the GitHub remote from `git remote 
 | `maxLogLines` | `int` | no | `50` | 10–500 log lines per failing job when `includeLogs` is true. |
 | `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
-`owner`/`repo` are required unless `localPath` is provided. Exactly one of `number`, `numbers`, or `ref` must be given; `numbers` accepts 1–20 entries and is processed with concurrency 4.
+Exactly one of `number`, `numbers`, or `ref` must be given; `numbers` accepts 1–20 entries and is processed with concurrency 4.
 
 **JSON output:**
 
@@ -172,7 +187,13 @@ When `localPath` is given, the tool resolves the GitHub remote from `git remote 
   },
   "behindBase": 3,
   "labels": ["bug"],
-  "conflicts": false
+  "conflicts": false,
+  "commitGranularity": {
+    "verdict": "warn",
+    "details": "1 of 4 commits are over-bundled (>15 files).",
+    "oversizedCommits": [{ "sha": "abc1234", "message": "feat: refactor everything", "filesChanged": 29 }]
+  },
+  "failingLogs": [{ "job": "test-unit", "log": "..." }]
 }
 ```
 
@@ -187,7 +208,7 @@ The `safe` boolean is computed from: PR must be open, not a draft, no conflicts,
 **Parameters:**
 
 | Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
+| ------ | ------ | ---------- | --------- | ------------- |
 | `owner` | `string` | yes | — | GitHub owner/org. |
 | `repo` | `string` | yes | — | Repository name. |
 | `base` | `string` | no | latest semver tag | Base ref to compare from (e.g. `v1.2.0`). Omit to auto-pick the latest semver tag. |
@@ -210,11 +231,17 @@ The `safe` boolean is computed from: PR must be open, not a draft, no conflicts,
     "date": "2025-04-10T12:00:00Z",
     "pr": { "number": 42, "title": "Fix auth bug", "labels": ["bug"] }
   }],
-  "stats": { "additions": 1234, "deletions": 567, "changedFiles": 23 }
+  "stats": { "additions": 1234, "deletions": 567, "changedFiles": 23 },
+  "artifactIntegrity": {
+    "verdict": "ok",
+    "details": "All assets covered by checksum file",
+    "missingFromChecksum": [],
+    "checksumAsset": "SHA256SUMS"
+  }
 }
 ```
 
-PR associations are extracted from commit message `(#123)` patterns, then resolved via GraphQL (up to 20 PRs per batch).
+PR associations are extracted from commit message `(#123)` patterns, then resolved via GraphQL (up to 20 PRs per batch). When `base` resolves to a GitHub release tag, the tool also checks whether that release's checksum asset covers the other uploaded artifacts.
 
 ---
 
@@ -223,7 +250,7 @@ PR associations are extracted from commit message `(#123)` patterns, then resolv
 **Parameters:**
 
 | Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
+| ------ | ------ | ---------- | --------- | ------------- |
 | `owner` | `string` | yes | — | GitHub owner/org. |
 | `repo` | `string` | yes | — | Repository name. |
 | `ref` | `string` | no | — | Branch or SHA. Finds latest run for this ref. |
@@ -262,7 +289,7 @@ Logs are **tail-truncated** (last N lines kept) since failure output is at the b
 **Parameters:**
 
 | Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
+| ------ | ------ | ---------- | --------- | ------------- |
 | `org` | `string` | yes | — | GitHub organization login. |
 | `maxRepos` | `int` | no | `30` | 1–100 repos (ordered by most recently pushed). |
 | `staleDays` | `int` | no | `7` | Days without activity before a PR is stale. |
@@ -303,8 +330,8 @@ The `attention` array is sorted by urgency: failing CI repos first, then by stal
 **Parameters:**
 
 | Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| `localPath` | `string` | yes | — | Absolute path to the local repo whose dependency pins to audit. |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `localPath` | `string` | no | active workspace root | Local repo whose dependency pins to audit. |
 | `pinFiles` | `string[]` | no | auto-detect | Files to parse. Accepts glob patterns (e.g. `**/go.mod`). Auto-detection tries: `go.mod`, `.gitmodules`, `scripts/versions.env`, `package.json`. |
 | `ownerAllowlist` | `string[]` | no | — | Only audit pins whose GitHub owner matches one of these values (case-insensitive). Useful to skip third-party upstreams. |
 | `grep` | `string` | no | — | Regex filter: only commits whose message matches are counted in `grepMatches`. All commits still count toward `behindBy`. |
@@ -356,8 +383,8 @@ The `attention` array is sorted by urgency: failing CI repos first, then by stal
 **Parameters:**
 
 | Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| `repos` | `(RepoRef \| LocalPath)[]` | yes | — | 1–64 repos. Each is `{ owner, repo }` or `{ localPath }`. |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `repos` | `(RepoRef \| LocalPath)[]` | no | active workspace root | 1–64 repos. Each is `{ owner, repo }` or `{ localPath }`. |
 | `since` | `string` | yes | — | ISO8601 timestamp or relative duration: `"48h"`, `"7d"`. |
 | `paths` | `string[]` | no | — | Filter to commits touching these paths (applied per repo via GraphQL `history(path:...)`). Multiple paths are OR'd together. |
 | `grep` | `string` | no | — | Regex filter applied client-side to commit message subjects. |
@@ -403,7 +430,7 @@ Commits are merged across repos and sorted newest-first. Per-repo errors do not 
 **Parameters:**
 
 | Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
+| ------ | ------ | ---------- | --------- | ------------- |
 | `owner` | `string` | yes | — | GitHub owner or organization. |
 | `repo` | `string` | yes | — | GitHub repository name. |
 | `ref` | `string` | no | default branch HEAD | Branch, tag, or SHA to resolve. |
@@ -432,7 +459,7 @@ The pseudo-version is formatted as `v0.0.0-YYYYMMDDHHMMSS-<first12SHAchars>` usi
 **Parameters:**
 
 | Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
+| ------ | ------ | ---------- | --------- | ------------- |
 | `owner` | `string` | yes | — | GitHub owner/org. |
 | `repo` | `string` | yes | — | Repository name. |
 | `base` | `string` | no | latest semver tag | Base ref (tag/branch). Omit to auto-pick the latest semver tag. |
@@ -463,9 +490,210 @@ Commits are compared as `base...head`. PR metadata (title, labels) is resolved v
 
 ---
 
+### `pr_comment_batch`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `owner` | `string` | yes | — | GitHub owner/org. |
+| `repo` | `string` | yes | — | Repository name. |
+| `pullNumber` | `int` | yes | — | Pull request number. |
+| `body` | `string` | no | — | Overall review body text. |
+| `event` | `"COMMENT" \| "APPROVE" \| "REQUEST_CHANGES"` | no | `"COMMENT"` | Review event type. |
+| `comments` | `{ path, line, body }[]` | no | — | Inline comments relative to repository root. |
+
+**JSON output:**
+
+```jsonc
+{ "reviewId": 123456, "url": "https://github.com/org/repo/pull/42#pullrequestreview-123456", "state": "COMMENTED", "commentsPosted": 2 }
+```
+
+---
+
+### `pr_create`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `owner` | `string` | yes | — | GitHub owner/org. |
+| `repo` | `string` | yes | — | Repository name. |
+| `title` | `string` | yes | — | Pull request title. |
+| `body` | `string` | no | — | Pull request body. |
+| `head` | `string` | yes | — | Source branch name. The branch must already exist on GitHub. |
+| `base` | `string` | yes | — | Target branch name. |
+| `draft` | `boolean` | no | `false` | Create the PR as a draft. |
+| `maintainerCanModify` | `boolean` | no | `true` | Allow maintainers to modify the PR branch. |
+
+**JSON output:**
+
+```jsonc
+{ "number": 42, "url": "https://github.com/org/repo/pull/42", "state": "open", "draft": false }
+```
+
+---
+
+### `issue_from_template`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `owner` | `string` | yes | — | GitHub owner/org. |
+| `repo` | `string` | yes | — | Repository name. |
+| `template` | `string` | yes | — | Template filename or partial match under `.github/ISSUE_TEMPLATE`. |
+| `variables` | `Record<string, unknown>` | yes | — | Values used to replace `{{ key }}` and `$key` patterns. |
+| `title` | `string` | yes | — | Issue title. |
+| `assignees` | `string[]` | no | — | Assignee usernames. |
+| `labels` | `string[]` | no | — | Labels to apply. |
+
+**JSON output:**
+
+```jsonc
+{ "number": 101, "url": "https://github.com/org/repo/issues/101", "title": "Investigate release drift" }
+```
+
+Template matching tries exact filename first, then case-insensitive partial matching.
+
+---
+
+### `release_create`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `owner` | `string` | yes | — | GitHub owner/org. |
+| `repo` | `string` | yes | — | Repository name. |
+| `tag` | `string` | yes | — | Release tag (for example `v1.2.3`). |
+| `name` | `string` | no | tag | Release title. |
+| `body` | `string` | no | `""` | Release notes body. |
+| `draft` | `boolean` | no | `false` | Create as draft. |
+| `prerelease` | `boolean` | no | `false` | Mark as prerelease. |
+| `generateNotes` | `boolean` | no | `false` | Ask GitHub to generate release notes. |
+
+**JSON output:**
+
+```jsonc
+{ "url": "https://github.com/org/repo/releases/tag/v1.2.3", "id": 999, "tag": "v1.2.3", "draft": false, "prerelease": false }
+```
+
+---
+
+### `workflow_dispatch`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `owner` | `string` | yes | — | GitHub owner/org. |
+| `repo` | `string` | yes | — | Repository name. |
+| `workflow` | `string` | yes | — | Workflow filename (for example `ci.yml`) or numeric workflow id. |
+| `ref` | `string` | yes | — | Branch or tag to run against. |
+| `inputs` | `Record<string, string>` | no | `{}` | Optional workflow input values. |
+
+**JSON output:**
+
+```jsonc
+{ "message": "Workflow 'ci.yml' dispatched successfully on org/repo:main. GitHub returns 204 (no run ID); poll workflow runs to find the dispatched run." }
+```
+
+---
+
+### `gh_auth_status`
+
+**Parameters:** none.
+
+**JSON output:**
+
+```jsonc
+{ "authenticated": true, "login": "alice", "scopes": [] }
+```
+
+On missing or invalid auth, the tool returns `{ "authenticated": false }` instead of a top-level error envelope.
+
+---
+
+### `actions_runs_filter`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `owner` | `string` | yes | — | GitHub owner/org. |
+| `repo` | `string` | yes | — | Repository name. |
+| `workflow` | `string` | no | — | Workflow name substring or id filter. |
+| `status` | `"queued" \| "in_progress" \| "completed"` | no | — | Filter by run status. |
+| `conclusion` | `"success" \| "failure" \| "cancelled"` | no | — | Filter by run conclusion. |
+| `branch` | `string` | no | — | Filter by branch name. |
+| `limit` | `int` | no | `20` | Maximum number of runs to return, up to 100. |
+
+**JSON output:**
+
+```jsonc
+{
+  "runs": [{
+    "id": 12345,
+    "name": "CI",
+    "status": "completed",
+    "conclusion": "failure",
+    "branch": "main",
+    "createdAt": "2026-05-01T10:00:00Z",
+    "url": "https://github.com/org/repo/actions/runs/12345"
+  }]
+}
+```
+
+---
+
+### `labels_sync`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `owner` | `string` | yes | — | GitHub owner/org. |
+| `repo` | `string` | yes | — | Repository name. |
+| `labels` | `{ name, color, description? }[]` | yes | — | Desired label set. `color` may be passed with or without `#`. |
+| `deleteExtra` | `boolean` | no | `false` | Delete labels not present in the declared set. |
+
+**JSON output:**
+
+```jsonc
+{ "created": ["bug"], "updated": ["enhancement"], "deleted": ["needs-triage"], "skipped": ["docs"] }
+```
+
+---
+
+### `check_run_create`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `owner` | `string` | yes | — | GitHub owner/org. |
+| `repo` | `string` | yes | — | Repository name. |
+| `name` | `string` | yes | — | Check run name. |
+| `headSha` | `string` | yes | — | Commit SHA to attach the check run to. |
+| `status` | `"queued" \| "in_progress" \| "completed"` | no | `"queued"` | Check run status. |
+| `conclusion` | `"success" \| "failure" \| "neutral" \| "cancelled" \| "skipped" \| "timed_out"` | no | — | Required when `status` is `"completed"`. |
+| `title` | `string` | no | — | Output title. |
+| `summary` | `string` | no | — | Output summary. |
+
+**JSON output:**
+
+```jsonc
+{ "id": 5555, "url": "https://github.com/org/repo/runs/5555" }
+```
+
+If `status` is `"completed"` without a `conclusion`, the tool returns a `VALIDATION` error envelope.
+
+---
+
 ## Authentication
 
-All tools require a GitHub token. Resolution order:
+All tools except `gh_auth_status` require a GitHub token. Resolution order:
 
 1. `GITHUB_TOKEN` environment variable
 2. `GH_TOKEN` environment variable (matches `gh` CLI convention)
