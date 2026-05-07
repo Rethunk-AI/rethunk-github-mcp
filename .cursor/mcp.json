@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "rethunk-github": {
-      "command": "bun",
-      "args": ["src/server.ts"]
-    }
-  }
-}
