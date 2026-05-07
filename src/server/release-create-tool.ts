@@ -49,28 +49,10 @@ export function registerReleaseCreateTool(server: FastMCP): void {
 
       const { owner, repo, tag, draft, prerelease, generateNotes } = args;
       const name = args.name ?? tag;
-      let body = args.body ?? "";
+      const body = args.body ?? "";
 
       try {
         const octokit = getOctokit();
-
-        // If generateNotes is true, auto-generate the release notes.
-        if (generateNotes) {
-          try {
-            const notesRes = await octokit.repos.generateReleaseNotes({
-              owner,
-              repo,
-              tag_name: tag,
-            });
-            body = notesRes.data.body;
-          } catch (err) {
-            console.error(
-              `[release_create] Failed to generate release notes for ${owner}/${repo} tag ${tag}:`,
-              err instanceof Error ? err.message : String(err),
-            );
-            // Fall through with empty body rather than failing entirely
-          }
-        }
 
         const release = await octokit.repos.createRelease({
           owner,
@@ -80,7 +62,7 @@ export function registerReleaseCreateTool(server: FastMCP): void {
           body,
           draft,
           prerelease,
-          generate_release_notes: false, // We handle generation above
+          generate_release_notes: generateNotes,
         });
 
         const result: ReleaseCreateResult = {

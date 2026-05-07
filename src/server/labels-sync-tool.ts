@@ -1,5 +1,6 @@
 import type { FastMCP } from "fastmcp";
 import { z } from "zod";
+import { gateAuth } from "./github-auth.js";
 import { classifyError, getOctokit, parallelApi } from "./github-client.js";
 import { errorRespond, jsonRespond } from "./json.js";
 
@@ -42,6 +43,9 @@ export function registerLabelsSyncTool(server: FastMCP): void {
     }),
     execute: async (args) => {
       try {
+        const auth = gateAuth();
+        if (!auth.ok) return errorRespond(auth.envelope);
+
         const octokit = getOctokit();
         const { owner, repo, labels, deleteExtra } = args;
 

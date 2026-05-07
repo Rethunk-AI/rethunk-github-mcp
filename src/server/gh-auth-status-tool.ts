@@ -1,7 +1,8 @@
 import type { FastMCP } from "fastmcp";
 import { z } from "zod";
-import { getOctokit } from "./github-client.js";
-import { errorRespond, jsonRespond, mkError } from "./json.js";
+import { gateAuth } from "./github-auth.js";
+import { classifyError, getOctokit } from "./github-client.js";
+import { errorRespond, jsonRespond } from "./json.js";
 
 export interface GhAuthStatusResult {
   authenticated: boolean;
@@ -17,6 +18,11 @@ export function registerGhAuthStatusTool(server: FastMCP): void {
     annotations: { readOnlyHint: true },
     parameters: z.object({}),
     execute: async () => {
+      const auth = gateAuth();
+      if (!auth.ok) {
+        return jsonRespond({ authenticated: false } satisfies GhAuthStatusResult);
+      }
+
       try {
         const octokit = getOctokit();
         const user = await octokit.users.getAuthenticated();
@@ -43,14 +49,7 @@ export function registerGhAuthStatusTool(server: FastMCP): void {
           };
           return jsonRespond(result);
         }
-
-        // For other errors, return an error envelope
-        const message = typeof e?.message === "string" ? e.message : "Failed to check auth status";
-        return errorRespond(
-          mkError("INTERNAL", message, {
-            suggestedFix: "Verify GitHub credentials are available.",
-          }),
-        );
+        return errorRespond(classifyError(err));
       }
     },
   });
