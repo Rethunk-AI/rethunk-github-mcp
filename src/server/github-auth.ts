@@ -65,3 +65,28 @@ export function gateAuth(): AuthResult {
 export function resetAuthCache(): void {
   cached = undefined;
 }
+
+/**
+ * Registered invalidation callbacks from dependent modules (e.g. github-client).
+ * Called by {@link invalidateAllAuthCaches} so that a 401 clears every layer.
+ */
+const _invalidationCallbacks: Array<() => void> = [];
+
+/** Register a callback that will be invoked when {@link invalidateAllAuthCaches} is called. */
+export function registerAuthInvalidationCallback(cb: () => void): void {
+  _invalidationCallbacks.push(cb);
+}
+
+/**
+ * Invalidate the gateAuth cache AND every registered downstream cache
+ * (Octokit + GraphQL clients in github-client.ts).
+ *
+ * Call this ONLY on genuine HTTP 401 responses so a rotated token is
+ * re-resolved on the next request. Do NOT call on 403 (rate-limit / SSO).
+ */
+export function invalidateAllAuthCaches(): void {
+  cached = undefined;
+  for (const cb of _invalidationCallbacks) {
+    cb();
+  }
+}
