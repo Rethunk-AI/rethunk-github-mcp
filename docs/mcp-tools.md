@@ -34,8 +34,8 @@ MCP clients expose tools as `{serverName}_{toolName}`. With the server registere
 ## Output and mutation model
 
 - Read-only rollup tools with `format` support default to **JSON** and accept `format: "markdown"` for human-readable output.
-- `gh_auth_status` and `actions_runs_filter` are read-only but always return compact JSON.
-- Write-capable tools always return compact JSON and mutate GitHub state.
+- `gh_auth_status` is read-only and always returns compact JSON.
+- Write-capable tools always return compact JSON. `labels_sync`, `release_create`, and `workflow_dispatch` accept `dryRun` to compute and return the planned action without mutating GitHub state.
 
 ## Workspace root resolution
 
@@ -133,7 +133,7 @@ When `localPath` is given, the tool resolves the GitHub remote from `git remote 
 
 | Name | Type | Required | Default | Description |
 | ------ | ------ | ---------- | --------- | ------------- |
-| `username` | `string` | no | authenticated user | GitHub username to query. |
+| `username` | `string` | no | authenticated user | GitHub username to query. Must match `^[A-Za-z0-9-]+$`; other values return a `VALIDATION` error. |
 | `maxResults` | `int` | no | `30` | 1–100 results per section. |
 | `blockedOnMe` | `boolean` | no | `false` | When true, filters to items needing your immediate action: authored PRs with CI failure or changes requested, plus all pending review requests. |
 | `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
@@ -223,6 +223,7 @@ The `safe` boolean is computed from: PR must be open, not a draft, no conflicts,
   "base": "v1.2.0",
   "head": "main",
   "aheadBy": 15,
+  "truncatedCount": 0,        // commits not shown when the list is capped (omitted when 0)
   "headCi": { "status": "success", "failedChecks": [] },
   "commits": [{
     "sha7": "abc1234",
@@ -241,7 +242,7 @@ The `safe` boolean is computed from: PR must be open, not a draft, no conflicts,
 }
 ```
 
-PR associations are extracted from commit message `(#123)` patterns, then resolved via GraphQL (up to 20 PRs per batch). When `base` resolves to a GitHub release tag, the tool also checks whether that release's checksum asset covers the other uploaded artifacts.
+PR associations are extracted from commit message `(#123)` patterns, then resolved via GraphQL in batches of 20. When `base` resolves to a GitHub release tag, the tool also checks whether that release's checksum asset covers the other uploaded artifacts. `truncatedCount` is set (and `commits` is shorter than `aheadBy`) when the compared range exceeds the GitHub compare-endpoint cap or `maxCommits`.
 
 ---
 
@@ -503,10 +504,12 @@ Commits are compared as `base...head`. PR metadata (title, labels) is resolved v
 | `event` | `"COMMENT" \| "APPROVE" \| "REQUEST_CHANGES"` | no | `"COMMENT"` | Review event type. |
 | `comments` | `{ path, line, body }[]` | no | — | Inline comments relative to repository root. |
 
+`commentsRequested` reports the number of inline comments submitted in the request; GitHub's review-creation response does not echo the created comments, so this is the requested count, not a server-confirmed one.
+
 **JSON output:**
 
 ```jsonc
-{ "reviewId": 123456, "url": "https://github.com/org/repo/pull/42#pullrequestreview-123456", "state": "COMMENTED", "commentsPosted": 2 }
+{ "reviewId": 123456, "url": "https://github.com/org/repo/pull/42#pullrequestreview-123456", "state": "COMMENTED", "commentsRequested": 2 }
 ```
 
 ---
@@ -543,7 +546,7 @@ Commits are compared as `base...head`. PR metadata (title, labels) is resolved v
 | `owner` | `string` | yes | — | GitHub owner/org. |
 | `repo` | `string` | yes | — | Repository name. |
 | `template` | `string` | yes | — | Template filename or partial match under `.github/ISSUE_TEMPLATE`. |
-| `variables` | `Record<string, unknown>` | yes | — | Values used to replace `{{ key }}` and `$key` patterns. |
+| `variables` | `Record<string, unknown>` | yes | — | Values used to replace `{{ key }}` (mustache) patterns. The legacy `$key` form is no longer substituted. |
 | `title` | `string` | yes | — | Issue title. |
 | `assignees` | `string[]` | no | — | Assignee usernames. |
 | `labels` | `string[]` | no | — | Labels to apply. |
@@ -572,12 +575,15 @@ Template matching tries exact filename first, then case-insensitive partial matc
 | `draft` | `boolean` | no | `false` | Create as draft. |
 | `prerelease` | `boolean` | no | `false` | Mark as prerelease. |
 | `generateNotes` | `boolean` | no | `false` | Ask GitHub to generate release notes. |
+| `dryRun` | `boolean` | no | `false` | When true, return the resolved release parameters without creating the release. |
 
 **JSON output:**
 
 ```jsonc
 { "url": "https://github.com/org/repo/releases/tag/v1.2.3", "id": 999, "tag": "v1.2.3", "draft": false, "prerelease": false }
 ```
+
+When both `body` and `generateNotes` are supplied, GitHub-generated notes win and the response carries a `warnings` array noting that the supplied `body` was overridden. If a release already exists for `tag`, the tool returns a `VALIDATION` error rather than mutating. A `dryRun` response carries `dryRun: true` and the parameters that would have been used.
 
 ---
 
@@ -592,6 +598,7 @@ Template matching tries exact filename first, then case-insensitive partial matc
 | `workflow` | `string` | yes | — | Workflow filename (for example `ci.yml`) or numeric workflow id. |
 | `ref` | `string` | yes | — | Branch or tag to run against. |
 | `inputs` | `Record<string, string>` | no | `{}` | Optional workflow input values. |
+| `dryRun` | `boolean` | no | `false` | When true, return the resolved dispatch parameters without triggering the workflow. |
 
 **JSON output:**
 
@@ -608,7 +615,7 @@ Template matching tries exact filename first, then case-insensitive partial matc
 **JSON output:**
 
 ```jsonc
-{ "authenticated": true, "login": "alice", "scopes": [] }
+{ "authenticated": true, "login": "alice", "scopes": ["repo", "read:org"] }
 ```
 
 On missing or invalid auth, the tool returns `{ "authenticated": false }` instead of a top-level error envelope.
@@ -628,6 +635,7 @@ On missing or invalid auth, the tool returns `{ "authenticated": false }` instea
 | `conclusion` | `"success" \| "failure" \| "cancelled"` | no | — | Filter by run conclusion. |
 | `branch` | `string` | no | — | Filter by branch name. |
 | `limit` | `int` | no | `20` | Maximum number of runs to return, up to 100. |
+| `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
 **JSON output:**
 
@@ -657,12 +665,22 @@ On missing or invalid auth, the tool returns `{ "authenticated": false }` instea
 | `repo` | `string` | yes | — | Repository name. |
 | `labels` | `{ name, color, description? }[]` | yes | — | Desired label set. `color` may be passed with or without `#`. |
 | `deleteExtra` | `boolean` | no | `false` | Delete labels not present in the declared set. |
+| `dryRun` | `boolean` | no | `false` | When true, compute and return the planned create/update/delete set without mutating any label. |
 
 **JSON output:**
 
 ```jsonc
-{ "created": ["bug"], "updated": ["enhancement"], "deleted": ["needs-triage"], "skipped": ["docs"] }
+{
+  "created": ["bug"],
+  "updated": ["enhancement"],
+  "deleted": ["needs-triage"],
+  "skipped": ["docs"],
+  "failures": [{ "name": "wontfix", "action": "update", "error": "..." }],  // per-label failures; empty when all succeeded
+  "dryRun": true   // present and true only when dryRun was requested
+}
 ```
+
+The existing label set is fully paginated, so the `deleteExtra` "extra" computation is correct for repositories with more than 100 labels. Each label operation is applied independently: a partial failure populates `failures` while completed work still appears in `created`/`updated`/`deleted` — the call never discards successful mutations.
 
 ---
 
