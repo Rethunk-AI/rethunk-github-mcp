@@ -5,6 +5,7 @@ import {
   classifyError,
   getOctokit,
   graphqlQuery,
+  parallelApi,
   resolveLocalRepoRemote,
 } from "./github-client.js";
 import { errorRespond, jsonRespond, mkError, mkLocalRepoNoRemote } from "./json.js";
@@ -110,44 +111,49 @@ async function checkCommitGranularity(
 ): Promise<CommitGranularityResult> {
   const octokit = getOctokit();
 
+  const MAX_COMMITS_TO_CHECK = 100;
   try {
-    // Fetch all commits for the PR
+    // Fetch all commits for the PR (cap at MAX_COMMITS_TO_CHECK for performance)
     const commitsRes = await octokit.pulls.listCommits({
       owner,
       repo,
       pull_number: prNumber,
-      per_page: 250,
+      per_page: MAX_COMMITS_TO_CHECK,
     });
 
-    const oversizedCommits: OversizedCommit[] = [];
     const OVERSIZED_THRESHOLD = 15;
 
-    // For each commit, check file count by fetching the commit detail
-    for (const commit of commitsRes.data) {
-      let filesChanged = 0;
-      try {
-        const commitDetail = await octokit.repos.getCommit({
-          owner,
-          repo,
-          ref: commit.sha,
-        });
-        filesChanged = commitDetail.data.files?.length ?? 0;
-      } catch (err) {
-        // Fallback to 0 if we can't fetch commit details
-        console.warn(
-          `[checkCommitGranularity] Could not fetch details for commit ${commit.sha}:`,
-          err instanceof Error ? err.message : String(err),
-        );
-      }
+    // Fetch commit details in parallel rather than sequentially to avoid N+1 latency
+    type CommitWithFiles = { sha: string; message: string; filesChanged: number };
+    const commitDetails = await parallelApi(
+      commitsRes.data,
+      async (commit): Promise<CommitWithFiles> => {
+        let filesChanged = 0;
+        try {
+          const commitDetail = await octokit.repos.getCommit({
+            owner,
+            repo,
+            ref: commit.sha,
+          });
+          filesChanged = commitDetail.data.files?.length ?? 0;
+        } catch (err) {
+          // Fallback to 0 if we can't fetch commit details
+          console.warn(
+            `[checkCommitGranularity] Could not fetch details for commit ${commit.sha}:`,
+            err instanceof Error ? err.message : String(err),
+          );
+        }
+        return { sha: commit.sha, message: commit.commit.message, filesChanged };
+      },
+    );
 
-      if (filesChanged > OVERSIZED_THRESHOLD) {
-        oversizedCommits.push({
-          sha: commit.sha.substring(0, 7),
-          message: commit.commit.message.split("\n")[0] || "(no message)",
-          filesChanged,
-        });
-      }
-    }
+    const oversizedCommits: OversizedCommit[] = commitDetails
+      .filter((c) => c.filesChanged > OVERSIZED_THRESHOLD)
+      .map((c) => ({
+        sha: c.sha.substring(0, 7),
+        message: c.message.split("\n")[0] || "(no message)",
+        filesChanged: c.filesChanged,
+      }));
 
     if (oversizedCommits.length === 0) {
       return {
