@@ -2,7 +2,7 @@ import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
 import { classifyError, graphqlQuery } from "./github-client.js";
-import { errorRespond, jsonRespond, truncateText } from "./json.js";
+import { errorRespond, jsonRespond, mkError, truncateText } from "./json.js";
 import { FormatSchema } from "./schemas.js";
 import { timeAgo } from "./utils.js";
 
@@ -58,7 +58,17 @@ export function registerMyWorkTool(server: FastMCP): void {
       if (!auth.ok) return errorRespond(auth.envelope);
 
       let username = args.username;
-      if (!username) {
+      if (username !== undefined) {
+        // Sanitize user-supplied username: GitHub logins are alphanumeric + hyphens only
+        if (!/^[A-Za-z0-9-]+$/.test(username)) {
+          return errorRespond(
+            mkError("VALIDATION", `Invalid GitHub username: ${JSON.stringify(username)}`, {
+              suggestedFix:
+                "GitHub usernames may only contain alphanumeric characters and hyphens.",
+            }),
+          );
+        }
+      } else {
         try {
           const viewer = await graphqlQuery<{ viewer: { login: string } }>(
             "query { viewer { login } }",
@@ -74,8 +84,10 @@ export function registerMyWorkTool(server: FastMCP): void {
       }
 
       const max = args.maxResults;
-      const query = `query($username:String!,$max:Int!){
-  authored:search(query:"is:pr is:open author:$username",type:ISSUE,first:$max){
+      // Build search strings with JS interpolation — GraphQL does not substitute variables
+      // inside string literal values, so $username inside a search query string is literal text.
+      const query = `query($max:Int!){
+  authored:search(query:"is:pr is:open author:${username}",type:ISSUE,first:$max){
     nodes{
       ...on PullRequest{
         __typename number title isDraft updatedAt
@@ -86,7 +98,7 @@ export function registerMyWorkTool(server: FastMCP): void {
       }
     }
   }
-  reviewRequested:search(query:"is:pr is:open review-requested:$username",type:ISSUE,first:$max){
+  reviewRequested:search(query:"is:pr is:open review-requested:${username}",type:ISSUE,first:$max){
     nodes{
       ...on PullRequest{
         __typename number title updatedAt
@@ -95,7 +107,7 @@ export function registerMyWorkTool(server: FastMCP): void {
       }
     }
   }
-  assignedIssues:search(query:"is:issue is:open assignee:$username",type:ISSUE,first:$max){
+  assignedIssues:search(query:"is:issue is:open assignee:${username}",type:ISSUE,first:$max){
     nodes{
       ...on Issue{
         __typename number title updatedAt
@@ -107,7 +119,7 @@ export function registerMyWorkTool(server: FastMCP): void {
 }`;
 
       try {
-        const data = await graphqlQuery<SearchResponse>(query, { username, max });
+        const data = await graphqlQuery<SearchResponse>(query, { max });
 
         const allAuthoredPrs = data.authored.nodes
           .filter((n): n is GraphQLPullRequest => n.__typename === "PullRequest")
