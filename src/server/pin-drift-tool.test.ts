@@ -1,8 +1,11 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import * as compareRefs from "./compare-refs.js";
+import { resetAuthCache } from "./github-auth.js";
+import * as githubClient from "./github-client.js";
 import {
   formatPinDriftMarkdown,
   parseGoMod,
@@ -560,5 +563,501 @@ require (
     if (parsed.error) return; // no auth
     if (!parsed.summary) return;
     expect(parsed.summary.totalPins).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mocked tests: GitHub API fan-out paths (zero live network calls)
+//
+// These tests use spyOn to intercept graphqlQuery / resolveRef / countBehind
+// so they run deterministically offline regardless of GITHUB_TOKEN.
+// ---------------------------------------------------------------------------
+
+const ORIGINAL_GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const ORIGINAL_GH_TOKEN = process.env.GH_TOKEN;
+
+describe("pin_drift tool (mocked API)", () => {
+  beforeEach(() => {
+    process.env.GITHUB_TOKEN = "test-token";
+    delete process.env.GH_TOKEN;
+    resetAuthCache();
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_GITHUB_TOKEN === undefined) {
+      delete process.env.GITHUB_TOKEN;
+    } else {
+      process.env.GITHUB_TOKEN = ORIGINAL_GITHUB_TOKEN;
+    }
+    if (ORIGINAL_GH_TOKEN === undefined) {
+      delete process.env.GH_TOKEN;
+    } else {
+      process.env.GH_TOKEN = ORIGINAL_GH_TOKEN;
+    }
+    resetAuthCache();
+  });
+
+  test("VALIDATION error when no localPath and no workspace root", async () => {
+    // Call with no localPath — the fake server has no workspace roots
+    const run = captureTool(registerPinDriftTool);
+    const text = await run({ format: "json" });
+    const parsed = JSON.parse(text) as { error: { code: string } };
+    expect(parsed.error.code).toBe("VALIDATION");
+  });
+
+  test("no-default-branch path: pin returns behindBy -1 with NOT_FOUND error", async () => {
+    const dir = makeTrackedTmpDir("pin-drift-mock-nodbref-");
+    writeFileSync(
+      join(dir, "go.mod"),
+      `module test.example.com
+go 1.21
+require (
+  github.com/SomeOrg/some-repo v0.0.0-20260401000000-aabbccddeeff
+)
+`,
+    );
+
+    const resolveRefSpy = spyOn(compareRefs, "resolveRef").mockResolvedValue({
+      oid: "aabbccddeeff00112233445566778899aabbccdd",
+      committedDate: "2026-04-01T00:00:00Z",
+    });
+    const graphqlSpy = spyOn(githubClient, "graphqlQuery").mockResolvedValue({
+      repository: { defaultBranchRef: null },
+    } as never);
+
+    const run = captureTool(registerPinDriftTool);
+    const text = await run({ localPath: dir, pinFiles: ["go.mod"], format: "json" });
+
+    resolveRefSpy.mockRestore();
+    graphqlSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as {
+      pins: Array<{ behindBy: number; stale: boolean; error?: { code: string } }>;
+      summary: { totalPins: number; stale: number; upToDate: number };
+    };
+    expect(parsed.summary.totalPins).toBe(1);
+    expect(parsed.pins[0]?.behindBy).toBe(-1);
+    expect(parsed.pins[0]?.stale).toBe(false);
+    expect(parsed.pins[0]?.error?.code).toBe("NOT_FOUND");
+    // upToDate excludes pins with behindBy < 0
+    expect(parsed.summary.upToDate).toBe(0);
+  });
+
+  test("SHA-at-HEAD fast path: pin already up to date (headSha starts with pinnedRef)", async () => {
+    const dir = makeTrackedTmpDir("pin-drift-mock-athead-");
+    const pinnedSha = "aabbccddeeff";
+    const headSha = `${pinnedSha}00112233445566778899aabbccdd`;
+    writeFileSync(
+      join(dir, "go.mod"),
+      `module test.example.com
+go 1.21
+require (
+  github.com/SomeOrg/some-repo v0.0.0-20260401000000-${pinnedSha}
+)
+`,
+    );
+
+    const resolveRefSpy = spyOn(compareRefs, "resolveRef").mockResolvedValue({
+      oid: headSha,
+      committedDate: "2026-04-01T00:00:00Z",
+    });
+    const graphqlSpy = spyOn(githubClient, "graphqlQuery").mockResolvedValue({
+      repository: {
+        defaultBranchRef: {
+          name: "main",
+          target: { oid: headSha, committedDate: "2026-05-01T00:00:00Z" },
+        },
+      },
+    } as never);
+
+    const run = captureTool(registerPinDriftTool);
+    const text = await run({ localPath: dir, pinFiles: ["go.mod"], format: "json" });
+
+    resolveRefSpy.mockRestore();
+    graphqlSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as {
+      pins: Array<{ behindBy: number; stale: boolean; pinnedDate?: string }>;
+      summary: { totalPins: number; stale: number; upToDate: number };
+    };
+    expect(parsed.summary.totalPins).toBe(1);
+    expect(parsed.pins[0]?.behindBy).toBe(0);
+    expect(parsed.pins[0]?.stale).toBe(false);
+    expect(parsed.pins[0]?.pinnedDate).toBe("2026-04-01T00:00:00Z");
+    expect(parsed.summary.upToDate).toBe(1);
+    expect(parsed.summary.stale).toBe(0);
+  });
+
+  test("stale pin: countBehind returns commits, JSON output includes behindBy and commits", async () => {
+    const dir = makeTrackedTmpDir("pin-drift-mock-stale-");
+    const pinnedSha = "deadbeef1234";
+    const headSha = "cafebabe00001111222233334444555566667777";
+    writeFileSync(
+      join(dir, "go.mod"),
+      `module test.example.com
+go 1.21
+require (
+  github.com/SomeOrg/some-repo v0.0.0-20260401000000-${pinnedSha}
+)
+`,
+    );
+
+    const resolveRefSpy = spyOn(compareRefs, "resolveRef").mockResolvedValue({
+      oid: `${pinnedSha}9999aaaabbbbccccddddeeee`,
+      committedDate: "2026-04-01T00:00:00Z",
+    });
+    const graphqlSpy = spyOn(githubClient, "graphqlQuery").mockResolvedValue({
+      repository: {
+        defaultBranchRef: {
+          name: "main",
+          target: { oid: headSha, committedDate: "2026-05-01T00:00:00Z" },
+        },
+      },
+    } as never);
+    const countBehindSpy = spyOn(compareRefs, "countBehind").mockResolvedValue({
+      behindBy: 3,
+      commits: [
+        {
+          sha7: "cafe123",
+          message: "feat: add widget",
+          author: "alice",
+          date: "2026-05-01T00:00:00Z",
+        },
+        {
+          sha7: "cafe456",
+          message: "fix: broken thing",
+          author: "bob",
+          date: "2026-04-30T00:00:00Z",
+        },
+        {
+          sha7: "cafe789",
+          message: "chore: bump deps",
+          author: "carol",
+          date: "2026-04-29T00:00:00Z",
+        },
+      ],
+    });
+
+    const run = captureTool(registerPinDriftTool);
+    const text = await run({ localPath: dir, pinFiles: ["go.mod"], format: "json" });
+
+    resolveRefSpy.mockRestore();
+    graphqlSpy.mockRestore();
+    countBehindSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as {
+      pins: Array<{
+        behindBy: number;
+        stale: boolean;
+        commits: Array<{ sha7: string; message: string }>;
+        pinnedDate?: string;
+      }>;
+      summary: { totalPins: number; stale: number; upToDate: number };
+    };
+    expect(parsed.summary.totalPins).toBe(1);
+    expect(parsed.summary.stale).toBe(1);
+    expect(parsed.summary.upToDate).toBe(0);
+    expect(parsed.pins[0]?.behindBy).toBe(3);
+    expect(parsed.pins[0]?.stale).toBe(true);
+    expect(parsed.pins[0]?.commits).toHaveLength(3);
+    expect(parsed.pins[0]?.commits[0]?.message).toBe("feat: add widget");
+    expect(parsed.pins[0]?.pinnedDate).toBe("2026-04-01T00:00:00Z");
+  });
+
+  test("stale pin: markdown rendering shows Stale Pins table", async () => {
+    const dir = makeTrackedTmpDir("pin-drift-mock-stale-md-");
+    const pinnedSha = "deadbeef1234";
+    const headSha = "cafebabe00001111222233334444555566667777";
+    writeFileSync(
+      join(dir, "go.mod"),
+      `module test.example.com
+go 1.21
+require (
+  github.com/SomeOrg/some-repo v0.0.0-20260401000000-${pinnedSha}
+)
+`,
+    );
+
+    const resolveRefSpy = spyOn(compareRefs, "resolveRef").mockResolvedValue({
+      oid: `${pinnedSha}9999aaaabbbbccccddddeeee`,
+      committedDate: "2026-04-01T00:00:00Z",
+    });
+    const graphqlSpy = spyOn(githubClient, "graphqlQuery").mockResolvedValue({
+      repository: {
+        defaultBranchRef: {
+          name: "main",
+          target: { oid: headSha, committedDate: "2026-05-01T00:00:00Z" },
+        },
+      },
+    } as never);
+    const countBehindSpy = spyOn(compareRefs, "countBehind").mockResolvedValue({
+      behindBy: 2,
+      commits: [
+        { sha7: "cafe123", message: "feat: widget", author: "alice", date: "2026-05-01T00:00:00Z" },
+        { sha7: "cafe456", message: "fix: broken", author: "bob", date: "2026-04-30T00:00:00Z" },
+      ],
+    });
+
+    const run = captureTool(registerPinDriftTool);
+    const text = await run({ localPath: dir, pinFiles: ["go.mod"], format: "markdown" });
+
+    resolveRefSpy.mockRestore();
+    graphqlSpy.mockRestore();
+    countBehindSpy.mockRestore();
+
+    expect(text).toContain("## Stale Pins");
+    expect(text).toContain("SomeOrg/some-repo");
+    expect(text).toContain("| 2 |");
+  });
+
+  test("grep option: grepMatches tallied from commit messages", async () => {
+    const dir = makeTrackedTmpDir("pin-drift-mock-grep-");
+    const pinnedSha = "deadbeef1234";
+    const headSha = "cafebabe00001111222233334444555566667777";
+    writeFileSync(
+      join(dir, "go.mod"),
+      `module test.example.com
+go 1.21
+require (
+  github.com/SomeOrg/some-repo v0.0.0-20260401000000-${pinnedSha}
+)
+`,
+    );
+
+    const resolveRefSpy = spyOn(compareRefs, "resolveRef").mockResolvedValue({
+      oid: `${pinnedSha}9999aaaabbbbccccddddeeee`,
+      committedDate: "2026-04-01T00:00:00Z",
+    });
+    const graphqlSpy = spyOn(githubClient, "graphqlQuery").mockResolvedValue({
+      repository: {
+        defaultBranchRef: {
+          name: "main",
+          target: { oid: headSha, committedDate: "2026-05-01T00:00:00Z" },
+        },
+      },
+    } as never);
+    const countBehindSpy = spyOn(compareRefs, "countBehind").mockResolvedValue({
+      behindBy: 2,
+      commits: [
+        {
+          sha7: "cafe123",
+          message: "security: patch CVE-123",
+          author: "alice",
+          date: "2026-05-01T00:00:00Z",
+        },
+        {
+          sha7: "cafe456",
+          message: "feat: new feature",
+          author: "bob",
+          date: "2026-04-30T00:00:00Z",
+        },
+      ],
+    });
+
+    const run = captureTool(registerPinDriftTool);
+    const text = await run({
+      localPath: dir,
+      pinFiles: ["go.mod"],
+      grep: "security",
+      format: "json",
+    });
+
+    resolveRefSpy.mockRestore();
+    graphqlSpy.mockRestore();
+    countBehindSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as {
+      pins: Array<{ grepMatches?: number; behindBy: number }>;
+    };
+    expect(parsed.pins[0]?.grepMatches).toBe(1);
+    expect(parsed.pins[0]?.behindBy).toBe(2);
+  });
+
+  test("catch block: error during resolveRef is wrapped with classifyError", async () => {
+    const dir = makeTrackedTmpDir("pin-drift-mock-catch-");
+    writeFileSync(
+      join(dir, "go.mod"),
+      `module test.example.com
+go 1.21
+require (
+  github.com/SomeOrg/some-repo v0.0.0-20260401000000-aabbccddeeff
+)
+`,
+    );
+
+    const resolveRefSpy = spyOn(compareRefs, "resolveRef").mockRejectedValue(
+      Object.assign(new Error("network timeout"), { status: 500 }),
+    );
+
+    const run = captureTool(registerPinDriftTool);
+    const text = await run({ localPath: dir, pinFiles: ["go.mod"], format: "json" });
+
+    resolveRefSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as {
+      pins: Array<{
+        behindBy: number;
+        stale: boolean;
+        error?: { code: string; retryable: boolean };
+      }>;
+      summary: { totalPins: number };
+    };
+    expect(parsed.summary.totalPins).toBe(1);
+    expect(parsed.pins[0]?.behindBy).toBe(-1);
+    expect(parsed.pins[0]?.stale).toBe(false);
+    expect(parsed.pins[0]?.error?.code).toBe("UPSTREAM_FAILURE");
+    expect(parsed.pins[0]?.error?.retryable).toBe(true);
+  });
+
+  test("tag/branch pinnedRef skips SHA prefix fast-path, goes to countBehind", async () => {
+    // pinnedRef is a semver tag (not a hex SHA) — must not short-circuit via headSha.startsWith
+    const dir = makeTrackedTmpDir("pin-drift-mock-tagpin-");
+    const headSha = "cafebabe00001111222233334444555566667777";
+    writeFileSync(
+      join(dir, "go.mod"),
+      // replace directive with semver tag — pushes pinnedRef="v1.2.3" into pins
+      `module test.example.com
+go 1.21
+replace github.com/foo/bar => github.com/SomeOrg/some-repo v1.2.3
+`,
+    );
+
+    const resolveRefSpy = spyOn(compareRefs, "resolveRef").mockResolvedValue({
+      oid: "1111111111112222222222223333333333334444",
+      committedDate: "2026-03-01T00:00:00Z",
+    });
+    const graphqlSpy = spyOn(githubClient, "graphqlQuery").mockResolvedValue({
+      repository: {
+        defaultBranchRef: {
+          name: "main",
+          target: { oid: headSha, committedDate: "2026-05-01T00:00:00Z" },
+        },
+      },
+    } as never);
+    const countBehindSpy = spyOn(compareRefs, "countBehind").mockResolvedValue({
+      behindBy: 5,
+      commits: [
+        { sha7: "aaaa111", message: "feat: x", author: "alice", date: "2026-04-01T00:00:00Z" },
+      ],
+    });
+
+    const run = captureTool(registerPinDriftTool);
+    const text = await run({ localPath: dir, pinFiles: ["go.mod"], format: "json" });
+
+    resolveRefSpy.mockRestore();
+    graphqlSpy.mockRestore();
+    countBehindSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as {
+      pins: Array<{ behindBy: number; stale: boolean; pinnedRef: string }>;
+    };
+    // countBehind must have been called (not short-circuited)
+    expect(parsed.pins[0]?.pinnedRef).toBe("v1.2.3");
+    expect(parsed.pins[0]?.behindBy).toBe(5);
+    expect(parsed.pins[0]?.stale).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseGoMod: replace block with pseudo-version (line 99 in source)
+// ---------------------------------------------------------------------------
+
+describe("parseGoMod replace + pseudo-version", () => {
+  test("replace directive with pseudo-version SHA is parsed correctly", () => {
+    const dir = makeTrackedTmpDir("pin-drift-gomod-pseudo-");
+    writeFileSync(
+      join(dir, "go.mod"),
+      `module example.com/myapp
+go 1.21
+replace github.com/some/dep => github.com/SomeOrg/some-repo v0.0.0-20260401000000-aabbccddeeff
+`,
+    );
+    const { pins } = parseGoMod(dir);
+    expect(pins).toContainEqual({
+      source: "go.mod",
+      owner: "SomeOrg",
+      repo: "some-repo",
+      pinnedRef: "aabbccddeeff",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseGitModules: covered via execute path with .gitmodules fixture
+// ---------------------------------------------------------------------------
+
+describe("pin_drift tool: .gitmodules parsing (mocked API)", () => {
+  beforeEach(() => {
+    process.env.GITHUB_TOKEN = "test-token";
+    delete process.env.GH_TOKEN;
+    resetAuthCache();
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_GITHUB_TOKEN === undefined) {
+      delete process.env.GITHUB_TOKEN;
+    } else {
+      process.env.GITHUB_TOKEN = ORIGINAL_GITHUB_TOKEN;
+    }
+    if (ORIGINAL_GH_TOKEN === undefined) {
+      delete process.env.GH_TOKEN;
+    } else {
+      process.env.GH_TOKEN = ORIGINAL_GH_TOKEN;
+    }
+    resetAuthCache();
+  });
+
+  test("non-GitHub submodule URL is skipped with not_github reason", async () => {
+    const dir = makeTrackedTmpDir("pin-drift-gitmod-nongh-");
+    // Write .gitmodules with a non-GitHub URL — parseGitModules skips before git ls-tree
+    writeFileSync(
+      join(dir, ".gitmodules"),
+      `[submodule "vendor/some-lib"]
+\tpath = vendor/some-lib
+\turl = https://gitlab.com/someorg/some-lib.git
+`,
+    );
+
+    const run = captureTool(registerPinDriftTool);
+    const text = await run({ localPath: dir, pinFiles: [".gitmodules"], format: "json" });
+
+    const parsed = JSON.parse(text) as {
+      error?: { code: string };
+      pins: unknown[];
+      skipped: Array<{ source: string; key: string; reason: string }>;
+      summary: { totalPins: number };
+    };
+    if (parsed.error) return; // auth not available — skip
+    expect(parsed.summary.totalPins).toBe(0);
+    expect(parsed.skipped).toContainEqual(
+      expect.objectContaining({ source: ".gitmodules", reason: "not_github" }),
+    );
+  });
+
+  test("GitHub submodule URL in non-git dir is skipped with ls_tree_failed", async () => {
+    // Use a temp dir that is NOT a git repo — git ls-tree will fail
+    const dir = makeTrackedTmpDir("pin-drift-gitmod-fail-");
+    writeFileSync(
+      join(dir, ".gitmodules"),
+      `[submodule "vendor/gh-lib"]
+\tpath = vendor/gh-lib
+\turl = https://github.com/SomeOrg/some-repo.git
+`,
+    );
+
+    const run = captureTool(registerPinDriftTool);
+    const text = await run({ localPath: dir, pinFiles: [".gitmodules"], format: "json" });
+
+    const parsed = JSON.parse(text) as {
+      error?: { code: string };
+      pins: unknown[];
+      skipped: Array<{ source: string; key: string; reason: string }>;
+      summary: { totalPins: number };
+    };
+    if (parsed.error) return; // auth not available — skip
+    expect(parsed.summary.totalPins).toBe(0);
+    expect(parsed.skipped).toContainEqual(
+      expect.objectContaining({ source: ".gitmodules", reason: "ls_tree_failed" }),
+    );
   });
 });
