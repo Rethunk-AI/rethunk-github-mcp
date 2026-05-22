@@ -115,7 +115,11 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
 
         const allJobs = jobsRes.data.jobs;
         const failed = allJobs.filter((j) => isFailed(j.conclusion));
-        const jobsToAnalyze = failed.length > 0 ? failed : allJobs;
+        // When the run itself failed, analyze failed jobs only.
+        // When the run is not failed (e.g. queried by runId for an in-progress or passing run),
+        // fall back to all jobs so the caller still gets useful log output.
+        const runFailed = isFailed(run.conclusion);
+        const jobsToAnalyze = runFailed ? (failed.length > 0 ? failed : allJobs) : failed;
 
         const grepRe = args.grepLog ? new RegExp(args.grepLog, "i") : undefined;
 
@@ -177,7 +181,7 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
         ];
 
         if (failedJobs.length === 0) {
-          lines.push("No failed jobs found.");
+          lines.push(runFailed ? "No failed jobs found." : "All jobs passed.");
         } else {
           lines.push("## Failed Jobs", "");
           for (const job of failedJobs) {
