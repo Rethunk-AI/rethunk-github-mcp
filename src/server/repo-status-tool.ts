@@ -110,7 +110,12 @@ export function formatRepoStatusMarkdown(results: RepoResult[]): string {
         );
       }
       if (r.ci) {
-        const state = r.ci.status === "success" ? "passing" : "failing";
+        const state =
+          r.ci.status === "success"
+            ? "passing"
+            : r.ci.status === "pending" || r.ci.status === "expected"
+              ? "pending"
+              : "failing";
         const extra = r.ci.failedChecks?.map((c) => c.name).join(", ");
         lines.push(`CI: ${state}${extra ? `: ${extra}` : ""}`);
       } else {

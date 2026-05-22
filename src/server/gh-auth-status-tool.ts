@@ -27,16 +27,15 @@ export function registerGhAuthStatusTool(server: FastMCP): void {
         const octokit = getOctokit();
         const user = await octokit.users.getAuthenticated();
 
-        // Get scopes from response headers (GitHub returns them on every API call)
-        // When fetching via REST, scopes may not be directly in the response,
-        // but we can infer from the fact that auth succeeded
+        // GitHub returns granted scopes in the `x-oauth-scopes` response header
+        // as a comma-space-separated string (e.g. "repo, user, gist").
+        const scopeHeader = (user.headers as Record<string, string | undefined>)["x-oauth-scopes"];
+        const scopes = scopeHeader ? scopeHeader.split(", ").filter(Boolean) : [];
+
         const result: GhAuthStatusResult = {
           authenticated: true,
           login: user.data.login,
-          // Scopes are typically available via the `x-oauth-scopes` header,
-          // but Octokit doesn't expose them directly. For this implementation,
-          // we return an empty array if we can't determine them.
-          scopes: [],
+          scopes,
         };
 
         return jsonRespond(result);
