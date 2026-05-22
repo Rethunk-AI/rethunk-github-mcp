@@ -2,6 +2,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+/**
+ * Reserved metadata constant for the MCP JSON payload format version.
+ * NOT currently emitted in any response payload — callers must not rely on
+ * it appearing in tool output. Bump this value (with a corresponding breaking
+ * change note) if a future incompatible JSON shape change is introduced.
+ */
 export const MCP_JSON_FORMAT_VERSION = "2" as const;
 
 let _cachedVersion: string | undefined;
