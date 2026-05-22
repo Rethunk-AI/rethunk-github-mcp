@@ -253,6 +253,17 @@ export function parsePackageJson(localPath: string): { pins: RawPin[]; skipped: 
   };
 
   for (const [, version] of Object.entries(allDeps)) {
+    // Skip protocol-prefixed specs that cannot be GitHub owner/repo shorthands.
+    // file:, workspace:, link:, npm:, portal:, patch:, and similar prefixes can
+    // contain an unrelated slash that would otherwise false-match the shorthand regex.
+    if (
+      /^(?:file|workspace|link|npm|portal|patch|git\+https?|git\+ssh|github|gitlab|bitbucket):/.test(
+        version,
+      )
+    ) {
+      continue;
+    }
+
     // GitHub shorthand: "owner/repo" or "owner/repo#sha/branch"
     const shorthand = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)(?:#(.+))?$/.exec(version);
     if (shorthand?.[1] && shorthand[2]) {
@@ -500,7 +511,14 @@ export function registerPinDriftTool(server: FastMCP): void {
           const headSha = dbRef.target.oid;
 
           // Already at head?
-          if (headSha.startsWith(pin.pinnedRef) || pin.pinnedRef.startsWith(sha7(headSha))) {
+          // The prefix shortcut is only meaningful when pinnedRef is itself a hex SHA
+          // (7–40 chars).  Tag/branch names like "v1.2.3" or "main" must not be compared
+          // as SHA prefixes because they will never match a 40-char commit hash.
+          const pinnedLooksLikeSha = /^[0-9a-f]{7,40}$/.test(pin.pinnedRef);
+          if (
+            pinnedLooksLikeSha &&
+            (headSha.startsWith(pin.pinnedRef) || pin.pinnedRef.startsWith(sha7(headSha)))
+          ) {
             return {
               source: pin.source,
               owner: pin.owner,
