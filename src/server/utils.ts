@@ -19,7 +19,8 @@ export function firstLine(text: string): string {
 
 /** Format a past ISO8601 date as a human-readable relative string. */
 export function timeAgo(dateStr: string): string {
-  const sec = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  // Clamp to >= 0 so future/clock-skewed dates don't produce nonsense output.
+  const sec = Math.max(0, Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000));
   if (sec < 60) return "now";
   if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
   if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
@@ -31,9 +32,17 @@ export function timeAgo(dateStr: string): string {
  * Parse a relative duration string ("48h", "7d") or an ISO8601 date/datetime
  * into an ISO8601 timestamp suitable for GitHub API `since` parameters.
  * Passthrough for anything that doesn't match: GitHub will reject it.
+ *
+ * ISO date strings are validated via Date.parse to reject syntactically
+ * correct but semantically invalid values like "2026-13-99".
  */
 export function parseSince(since: string): string {
   if (/^\d{4}-\d{2}-\d{2}T/.test(since) || /^\d{4}-\d{2}-\d{2}$/.test(since)) {
+    // Validate the date is actually real (not e.g. month 13 or day 99)
+    const ms = Date.parse(since);
+    if (Number.isNaN(ms)) {
+      throw new Error(`parseSince: invalid date "${since}"`);
+    }
     return since;
   }
   const hoursMatch = /^(\d+(?:\.\d+)?)h$/i.exec(since);
@@ -59,7 +68,8 @@ export function extractPRNumbers(message: string): number[] {
     const raw = m[1];
     if (!raw) continue;
     const n = Number.parseInt(raw, 10);
-    if (!Number.isNaN(n)) result.push(n);
+    // Reject values that overflow JS safe integer range or are non-positive
+    if (Number.isSafeInteger(n) && n > 0) result.push(n);
   }
   return result;
 }
