@@ -3,6 +3,7 @@ import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
 import { classifyError, getOctokit } from "./github-client.js";
 import { errorRespond, jsonRespond } from "./json.js";
+import { FormatSchema } from "./schemas.js";
 
 export interface WorkflowRun {
   id: number;
@@ -45,6 +46,7 @@ export function registerActionsRunsFilterTool(server: FastMCP): void {
         .optional()
         .default(20)
         .describe("Maximum number of runs to return (default 20)."),
+      format: FormatSchema,
     }),
     execute: async (args) => {
       try {
@@ -96,7 +98,22 @@ export function registerActionsRunsFilterTool(server: FastMCP): void {
           })),
         };
 
-        return jsonRespond(result);
+        if (!args.format || args.format === "json") return jsonRespond(result);
+
+        // Markdown rendering
+        const lines: string[] = ["# Actions Workflow Runs", ""];
+        if (result.runs.length === 0) {
+          lines.push("*(no runs matched)*");
+        } else {
+          lines.push("| # | Workflow | Status | Conclusion | Branch | Created |");
+          lines.push("|---|----------|--------|------------|--------|---------|");
+          for (const run of result.runs) {
+            lines.push(
+              `| [${run.id}](${run.url}) | ${run.name} | ${run.status} | ${run.conclusion ?? "—"} | ${run.branch} | ${run.createdAt.substring(0, 10)} |`,
+            );
+          }
+        }
+        return lines.join("\n");
       } catch (err) {
         console.error(
           `[actions_runs_filter] Failed to list workflow runs for ${args.owner}/${args.repo}:`,
