@@ -93,7 +93,7 @@ query OrgPulse($org: String!, $first: Int!) {
             }
           }
         }
-        pullRequests(states: OPEN, first: 10, orderBy: {field: UPDATED_AT, direction: DESC}) {
+        pullRequests(states: OPEN, first: 10, orderBy: {field: UPDATED_AT, direction: ASC}) {
           totalCount
           nodes {
             number
