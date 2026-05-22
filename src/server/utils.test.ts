@@ -74,6 +74,17 @@ describe("parseSince", () => {
     expect(parseSince("yesterday")).toBe("yesterday");
     expect(parseSince("last week")).toBe("last week");
   });
+
+  test("throws for syntactically-valid but semantically-invalid ISO dates (Bug 6)", () => {
+    // Month 13 and day 99 pass the regex but fail Date.parse validation
+    expect(() => parseSince("2026-13-99")).toThrow('parseSince: invalid date "2026-13-99"');
+    expect(() => parseSince("2026-04-99")).toThrow('parseSince: invalid date "2026-04-99"');
+  });
+
+  test("accepts valid ISO date-only strings without throwing", () => {
+    expect(parseSince("2026-04-10")).toBe("2026-04-10");
+    expect(parseSince("2000-01-01")).toBe("2000-01-01");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -100,6 +111,12 @@ describe("sha7 / sha12", () => {
 describe("timeAgo", () => {
   test("returns now for very recent timestamps", () => {
     expect(timeAgo(new Date().toISOString())).toBe("now");
+  });
+
+  test("returns 'now' for future/clock-skewed dates (clamps negative sec to 0)", () => {
+    // A timestamp 5 minutes in the future should not produce "-5m ago"
+    const future = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    expect(timeAgo(future)).toBe("now");
   });
 
   test("returns minutes for sub-hour age", () => {
@@ -151,6 +168,12 @@ describe("extractPRNumbers", () => {
 
   test("ignores bare hash without parentheses", () => {
     expect(extractPRNumbers("refs #123")).toEqual([]);
+  });
+
+  test("rejects values that exceed Number.MAX_SAFE_INTEGER (Bug 13)", () => {
+    // 9007199254740992 overflows safe integer; parseInt still returns it but isSafeInteger rejects it
+    const bigNum = String(Number.MAX_SAFE_INTEGER + 1);
+    expect(extractPRNumbers(`(#${bigNum})`)).toEqual([]);
   });
 });
 
