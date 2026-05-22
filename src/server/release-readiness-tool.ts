@@ -239,6 +239,9 @@ export function registerReleaseReadinessTool(server: FastMCP): void {
 
         const aheadBy = cmp.data.ahead_by;
         const rawCommits = cmp.data.commits.slice(0, maxCommits);
+        // The compare endpoint caps at 250 commits; maxCommits may also truncate the list.
+        // Track how many commits were not shown so we can surface that to the caller.
+        const truncatedCount = aheadBy - rawCommits.length;
 
         const allPRNumbers = new Set<number>();
         for (const c of rawCommits) {
@@ -288,15 +291,28 @@ export function registerReleaseReadinessTool(server: FastMCP): void {
           };
         }
 
-        const result = { base, head, aheadBy, headCi: ciStatus, commits, stats, artifactIntegrity };
+        const result = {
+          base,
+          head,
+          aheadBy,
+          truncatedCount: truncatedCount > 0 ? truncatedCount : undefined,
+          headCi: ciStatus,
+          commits,
+          stats,
+          artifactIntegrity,
+        };
 
         if (args.format === "json") return jsonRespond(result);
 
         // Markdown — compact single-line list instead of full table
+        const aheadSuffix =
+          truncatedCount > 0
+            ? ` — list truncated, ${truncatedCount} commit${truncatedCount === 1 ? "" : "s"} not shown`
+            : "";
         const lines: string[] = [
           `# Release Readiness: ${owner}/${repo}`,
           "",
-          `${base} → ${head} (${aheadBy} commits ahead)`,
+          `${base} → ${head} (${aheadBy} commits ahead${aheadSuffix})`,
         ];
 
         const ciState =
@@ -304,7 +320,9 @@ export function registerReleaseReadinessTool(server: FastMCP): void {
             ? "CI: passing"
             : ciStatus.status === "not_configured"
               ? "CI: not configured"
-              : `CI: failing (${ciStatus.failedChecks.map((c) => c.name).join(", ")})`;
+              : ciStatus.status === "pending" || ciStatus.status === "expected"
+                ? "CI: pending"
+                : `CI: failing (${ciStatus.failedChecks.map((c) => c.name).join(", ")})`;
         lines.push(ciState);
 
         // Add artifact integrity status
