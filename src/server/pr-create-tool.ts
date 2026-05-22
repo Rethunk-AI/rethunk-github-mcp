@@ -56,8 +56,7 @@ export function registerPrCreateTool(server: FastMCP): void {
         const octokit = getOctokit();
 
         // Build PR creation request
-        // biome-ignore lint/suspicious/noExplicitAny: Octokit type signature requires this pattern
-        const requestParams: any = {
+        const requestParams: Parameters<typeof octokit.pulls.create>[0] = {
           owner,
           repo,
           title,
@@ -65,12 +64,8 @@ export function registerPrCreateTool(server: FastMCP): void {
           base,
           draft,
           maintainer_can_modify: maintainerCanModify,
+          ...(body?.trim() ? { body } : {}),
         };
-
-        // Add body if provided
-        if (body?.trim()) {
-          requestParams.body = body;
-        }
 
         const pr = await octokit.pulls.create(requestParams);
 

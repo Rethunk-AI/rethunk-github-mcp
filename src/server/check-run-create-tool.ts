@@ -35,10 +35,11 @@ export function registerCheckRunCreateTool(server: FastMCP): void {
       summary: z.string().optional().describe("Summary of the check run."),
     }),
     execute: async (args) => {
-      try {
-        const auth = gateAuth();
-        if (!auth.ok) return errorRespond(auth.envelope);
+      // gateAuth before try so auth errors are not swallowed by the catch
+      const auth = gateAuth();
+      if (!auth.ok) return errorRespond(auth.envelope);
 
+      try {
         const { owner, repo, name, headSha, status, conclusion, title, summary } = args;
 
         // If status is completed, conclusion is required

@@ -11,7 +11,7 @@ import { RepoRefSchema } from "./schemas.js";
 
 export interface WorkflowDispatchResult {
   message: string;
-  runId?: number;
+  dryRun?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -31,18 +31,34 @@ export function registerWorkflowDispatchTool(server: FastMCP): void {
         .record(z.string(), z.string())
         .optional()
         .describe("Optional workflow input parameters as key-value pairs."),
+      dryRun: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "If true, return the resolved parameters that WOULD be dispatched WITHOUT triggering the workflow.",
+        ),
     }),
     execute: async (args) => {
       const auth = gateAuth();
       if (!auth.ok) return errorRespond(auth.envelope);
 
-      const { owner, repo, workflow, ref, inputs } = args;
+      const { owner, repo, workflow, ref, inputs, dryRun } = args;
+
+      // Only coerce to Number when the string is purely numeric (e.g. a workflow ID integer).
+      // The GitHub API accepts filename strings directly without coercion.
+      const workflowId = /^\d+$/.test(workflow) ? Number(workflow) : workflow;
+
+      if (dryRun) {
+        const dryRunResult: WorkflowDispatchResult = {
+          message: `[dry-run] Would dispatch workflow '${workflow}' on ${owner}/${repo}:${ref} with workflow_id=${JSON.stringify(workflowId)}${inputs ? ` and inputs ${JSON.stringify(inputs)}` : ""}.`,
+          dryRun: true,
+        };
+        return jsonRespond(dryRunResult);
+      }
 
       try {
         const octokit = getOctokit();
-
-        // workflow_id can be a string (filename) or number (ID)
-        const workflowId = Number.isNaN(Number(workflow)) ? workflow : Number(workflow);
 
         await octokit.actions.createWorkflowDispatch({
           owner,

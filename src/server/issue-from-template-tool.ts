@@ -126,27 +126,20 @@ async function fetchTemplateContent(
 }
 
 /**
- * Substitute template variables in the format {{ variable }} or $variable.
+ * Substitute template variables in the format {{ variable }}.
+ * Only mustache-style `{{ variable }}` placeholders are supported.
+ * The `$variable` syntax has been removed to avoid unintended rewrites of
+ * shell-style tokens, numeric references like `$100`, and similar patterns.
  */
 export function substituteVariables(
   template: string,
   variables: Record<string, string | number | boolean>,
 ): string {
-  let result = template;
-
-  // Replace {{ variable }} style
-  result = result.replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, key: string) => {
+  // Replace {{ variable }} style only
+  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, key: string) => {
     const value = variables[key];
     return value !== undefined ? String(value) : `{{ ${key} }}`;
   });
-
-  // Replace $variable style
-  result = result.replace(/\$(\w+)/g, (_match, key: string) => {
-    const value = variables[key];
-    return value !== undefined ? String(value) : `$${key}`;
-  });
-
-  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -168,7 +161,7 @@ export function registerIssueFromTemplateTool(server: FastMCP): void {
       variables: z
         .record(z.string(), z.any())
         .describe(
-          "Key-value pairs for template variable substitution. Replaces {{ key }} and $key patterns.",
+          "Key-value pairs for template variable substitution. Replaces {{ key }} patterns only.",
         ),
       title: z.string().describe("Issue title."),
       assignees: z
@@ -222,21 +215,14 @@ export function registerIssueFromTemplateTool(server: FastMCP): void {
         const body = substituteVariables(templateContent, variables as any);
 
         // Create the issue with the rendered template
-        // biome-ignore lint/suspicious/noExplicitAny: Octokit type signature requires this pattern
-        const requestParams: any = {
+        const requestParams: Parameters<typeof octokit.issues.create>[0] = {
           owner,
           repo,
           title,
           body,
+          ...(assignees && assignees.length > 0 ? { assignees } : {}),
+          ...(labels && labels.length > 0 ? { labels } : {}),
         };
-
-        if (assignees && assignees.length > 0) {
-          requestParams.assignees = assignees;
-        }
-
-        if (labels && labels.length > 0) {
-          requestParams.labels = labels;
-        }
 
         const issue = await octokit.issues.create(requestParams);
 

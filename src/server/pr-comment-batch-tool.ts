@@ -19,7 +19,8 @@ export interface PrCommentBatchResult {
   reviewId: number;
   url: string;
   state: string;
-  commentsPosted: number;
+  /** Number of inline comments submitted in the review request. GitHub does not return created comments in the review response, so this reflects the input count (commentsRequested). */
+  commentsRequested: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -88,7 +89,7 @@ export function registerPrCommentBatchTool(server: FastMCP): void {
           reviewId: review.data.id,
           url: review.data.html_url,
           state: review.data.state,
-          commentsPosted: comments?.length ?? 0,
+          commentsRequested: comments?.length ?? 0,
         };
 
         return jsonRespond(result);
