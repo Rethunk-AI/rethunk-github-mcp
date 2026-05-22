@@ -1,7 +1,31 @@
-import { describe, expect, test } from "bun:test";
-
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { resetAuthCache } from "./github-auth.js";
+import * as githubClient from "./github-client.js";
 import { type ArtifactIntegrity, registerReleaseReadinessTool } from "./release-readiness-tool.js";
 import { captureTool } from "./test-harness.js";
+
+const ORIGINAL_GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const ORIGINAL_GH_TOKEN = process.env.GH_TOKEN;
+
+beforeEach(() => {
+  process.env.GITHUB_TOKEN = "test-token";
+  delete process.env.GH_TOKEN;
+  resetAuthCache();
+});
+
+afterEach(() => {
+  if (ORIGINAL_GITHUB_TOKEN === undefined) {
+    delete process.env.GITHUB_TOKEN;
+  } else {
+    process.env.GITHUB_TOKEN = ORIGINAL_GITHUB_TOKEN;
+  }
+  if (ORIGINAL_GH_TOKEN === undefined) {
+    delete process.env.GH_TOKEN;
+  } else {
+    process.env.GH_TOKEN = ORIGINAL_GH_TOKEN;
+  }
+  resetAuthCache();
+});
 
 /**
  * Test suite for release_readiness tool.
@@ -130,5 +154,129 @@ describe("release_readiness tool", () => {
     expect(integrity.details).toContain("No release assets");
     expect(integrity.missingFromChecksum).toHaveLength(0);
     expect(integrity.checksumAsset).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mocked execute body tests — cover the full execute path with stub API
+// ---------------------------------------------------------------------------
+
+describe("release_readiness execute body (mocked)", () => {
+  test("happy path: returns aheadBy, commits, CI status and pending state", async () => {
+    const sha = "abc1234567890abcdef".padEnd(40, "0");
+
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      repos: {
+        get: async () => ({ data: { default_branch: "main" } }),
+        compareCommitsWithBasehead: async () => ({
+          data: {
+            ahead_by: 2,
+            commits: [
+              {
+                sha,
+                commit: {
+                  message: "fix: squash bug (#42)",
+                  author: { name: "Alice", date: "2024-03-01T00:00:00Z" },
+                },
+                author: { login: "alice" },
+              },
+            ],
+            files: [{ additions: 10, deletions: 3 }],
+          },
+        }),
+        getReleaseByTag: async () => {
+          throw new Error("not a release");
+        },
+        listReleaseAssets: async () => ({ data: [] }),
+      },
+    } as never);
+
+    const graphqlSpy = spyOn(githubClient, "graphqlQuery").mockResolvedValue({
+      repository: {
+        object: {
+          statusCheckRollup: { state: "PENDING", contexts: { nodes: [] } },
+        },
+      },
+    } as never);
+
+    const run = captureTool(registerReleaseReadinessTool);
+    const text = await run({
+      owner: "Acme",
+      repo: "svc",
+      base: "v1.0.0",
+      head: "main",
+      format: "json",
+    });
+
+    octokitSpy.mockRestore();
+    graphqlSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as {
+      base: string;
+      head: string;
+      aheadBy: number;
+      headCi: { status: string };
+      commits: unknown[];
+      stats: { additions: number };
+    };
+
+    expect(parsed.base).toBe("v1.0.0");
+    expect(parsed.head).toBe("main");
+    expect(parsed.aheadBy).toBe(2);
+    expect(parsed.commits).toHaveLength(1);
+    expect(parsed.stats.additions).toBe(10);
+    // pending CI should not collapse to "failing"
+    expect(parsed.headCi.status).toBe("pending");
+  });
+
+  test("markdown shows truncation notice when aheadBy exceeds listed commits", async () => {
+    const sha = "def4567890abcdef1234".padEnd(40, "0");
+
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      repos: {
+        get: async () => ({ data: { default_branch: "main" } }),
+        compareCommitsWithBasehead: async () => ({
+          data: {
+            ahead_by: 300, // 300 ahead but only 1 in the list (cap=50 by default)
+            commits: [
+              {
+                sha,
+                commit: {
+                  message: "fix: one commit",
+                  author: { name: "Bob", date: "2024-03-01T00:00:00Z" },
+                },
+                author: { login: "bob" },
+              },
+            ],
+            files: [],
+          },
+        }),
+        getReleaseByTag: async () => {
+          throw new Error("not a release");
+        },
+        listReleaseAssets: async () => ({ data: [] }),
+      },
+    } as never);
+
+    const graphqlSpy = spyOn(githubClient, "graphqlQuery").mockResolvedValue({
+      repository: { object: { statusCheckRollup: null } },
+    } as never);
+
+    const run = captureTool(registerReleaseReadinessTool);
+    const text = await run({
+      owner: "Acme",
+      repo: "svc",
+      base: "v1.0.0",
+      head: "main",
+      maxCommits: 1,
+      format: "markdown",
+    });
+
+    octokitSpy.mockRestore();
+    graphqlSpy.mockRestore();
+
+    // Should include "not shown" truncation notice
+    expect(text).toContain("not shown");
+    expect(text).toContain("299");
   });
 });
