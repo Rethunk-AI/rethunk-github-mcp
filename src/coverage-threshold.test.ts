@@ -33,8 +33,32 @@ describe("assertCoverageThreshold", () => {
       messages.push(String(message));
     };
 
+    // Fixture must include all registered tool file names so assertToolFilesPresent passes.
+    const fixture = [
+      "All files                           |   91.05 |   80.00 |",
+      " src/server/actions-runs-filter-tool.ts |  100.00 |  100.00 |",
+      " src/server/changelog-draft-tool.ts     |  100.00 |  100.00 |",
+      " src/server/check-run-create-tool.ts    |  100.00 |  100.00 |",
+      " src/server/ci-diagnosis-tool.ts        |  100.00 |  100.00 |",
+      " src/server/ecosystem-activity-tool.ts  |  100.00 |  100.00 |",
+      " src/server/gh-auth-status-tool.ts      |  100.00 |  100.00 |",
+      " src/server/issue-from-template-tool.ts |  100.00 |  100.00 |",
+      " src/server/labels-sync-tool.ts         |  100.00 |  100.00 |",
+      " src/server/module-pin-hint-tool.ts     |  100.00 |  100.00 |",
+      " src/server/my-work-tool.ts             |  100.00 |  100.00 |",
+      " src/server/org-pulse-tool.ts           |  100.00 |  100.00 |",
+      " src/server/pin-drift-tool.ts           |  100.00 |  100.00 |",
+      " src/server/pr-comment-batch-tool.ts    |  100.00 |  100.00 |",
+      " src/server/pr-create-tool.ts           |  100.00 |  100.00 |",
+      " src/server/pr-preflight-tool.ts        |  100.00 |  100.00 |",
+      " src/server/release-create-tool.ts      |  100.00 |  100.00 |",
+      " src/server/release-readiness-tool.ts   |  100.00 |  100.00 |",
+      " src/server/repo-status-tool.ts         |  100.00 |  100.00 |",
+      " src/server/workflow-dispatch-tool.ts   |  100.00 |  100.00 |",
+    ].join("\n");
+
     try {
-      assertCoverageThreshold("All files                           |   91.05 |   80.00 |", 80);
+      assertCoverageThreshold(fixture, 80);
     } finally {
       console.log = originalLog;
     }

@@ -19,23 +19,20 @@ describe("substituteVariables", () => {
     expect(out).toBe("Hello {{ missing }}");
   });
 
-  test("replaces $word placeholders when defined", () => {
-    const out = substituteVariables("Path $dir ok", { dir: "/tmp" });
-    expect(out).toBe("Path /tmp ok");
-  });
-
-  test("leaves $placeholder when key missing", () => {
-    const out = substituteVariables("Keep $x", {});
-    expect(out).toBe("Keep $x");
-  });
-
   test("coerces numbers and booleans to string", () => {
-    const out = substituteVariables("{{ n }} $b", { n: 42, b: true });
+    const out = substituteVariables("{{ n }} {{ b }}", { n: 42, b: true });
     expect(out).toBe("42 true");
   });
 
-  test("handles adjacent brace and dollar patterns", () => {
-    const out = substituteVariables("{{a}}$b", { a: "1", b: "2" });
+  test("leaves $word patterns untouched (not a supported syntax)", () => {
+    // $variable substitution was removed to prevent unintended rewrites
+    // of shell tokens, numeric references like $100, etc.
+    const out = substituteVariables("Path $dir ok", { dir: "/tmp" });
+    expect(out).toBe("Path $dir ok");
+  });
+
+  test("handles adjacent brace patterns", () => {
+    const out = substituteVariables("{{a}}{{b}}", { a: "1", b: "2" });
     expect(out).toBe("12");
   });
 });

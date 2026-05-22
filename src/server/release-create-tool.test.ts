@@ -5,6 +5,20 @@ import * as githubClient from "./github-client.js";
 import { registerReleaseCreateTool } from "./release-create-tool.js";
 import { captureTool } from "./test-harness.js";
 
+/** Minimal mock that satisfies the release_create tool's Octokit surface. */
+function makeReleaseMock(
+  createRelease: (
+    params: Parameters<ReturnType<typeof githubClient.getOctokit>["repos"]["createRelease"]>[0],
+  ) => Promise<unknown>,
+  getReleaseByTag: () => Promise<unknown> = async () => {
+    throw { status: 404, message: "Not Found" };
+  },
+) {
+  return {
+    repos: { createRelease, getReleaseByTag },
+  } as unknown as ReturnType<typeof githubClient.getOctokit>;
+}
+
 describe("release_create", () => {
   const run = captureTool(registerReleaseCreateTool);
   const originalGithubToken = process.env.GITHUB_TOKEN;
@@ -27,22 +41,20 @@ describe("release_create", () => {
     let request:
       | Parameters<ReturnType<typeof githubClient.getOctokit>["repos"]["createRelease"]>[0]
       | undefined;
-    const spy = spyOn(githubClient, "getOctokit").mockReturnValue({
-      repos: {
-        createRelease: async (params) => {
-          request = params;
-          return {
-            data: {
-              html_url: "https://github.com/Rethunk-AI/test-repo/releases/tag/v1.0.0",
-              id: 123,
-              tag_name: params.tag_name,
-              draft: params.draft ?? false,
-              prerelease: params.prerelease ?? false,
-            },
-          };
-        },
-      },
-    } as unknown as ReturnType<typeof githubClient.getOctokit>);
+    const spy = spyOn(githubClient, "getOctokit").mockReturnValue(
+      makeReleaseMock(async (params) => {
+        request = params;
+        return {
+          data: {
+            html_url: "https://github.com/Rethunk-AI/test-repo/releases/tag/v1.0.0",
+            id: 123,
+            tag_name: params.tag_name,
+            draft: params.draft ?? false,
+            prerelease: params.prerelease ?? false,
+          },
+        };
+      }),
+    );
 
     const parsed = JSON.parse(
       await run({
@@ -88,22 +100,20 @@ describe("release_create", () => {
     let request:
       | Parameters<ReturnType<typeof githubClient.getOctokit>["repos"]["createRelease"]>[0]
       | undefined;
-    const spy = spyOn(githubClient, "getOctokit").mockReturnValue({
-      repos: {
-        createRelease: async (params) => {
-          request = params;
-          return {
-            data: {
-              html_url: "https://github.com/Rethunk-AI/test-repo/releases/tag/v1.2.3",
-              id: 456,
-              tag_name: params.tag_name,
-              draft: false,
-              prerelease: false,
-            },
-          };
-        },
-      },
-    } as unknown as ReturnType<typeof githubClient.getOctokit>);
+    const spy = spyOn(githubClient, "getOctokit").mockReturnValue(
+      makeReleaseMock(async (params) => {
+        request = params;
+        return {
+          data: {
+            html_url: "https://github.com/Rethunk-AI/test-repo/releases/tag/v1.2.3",
+            id: 456,
+            tag_name: params.tag_name,
+            draft: false,
+            prerelease: false,
+          },
+        };
+      }),
+    );
 
     await run({
       owner: "Rethunk-AI",
@@ -123,13 +133,11 @@ describe("release_create", () => {
   });
 
   test("maps GitHub validation errors to structured envelopes", async () => {
-    const spy = spyOn(githubClient, "getOctokit").mockReturnValue({
-      repos: {
-        createRelease: async () => {
-          throw { status: 422, message: "Validation failed" };
-        },
-      },
-    } as unknown as ReturnType<typeof githubClient.getOctokit>);
+    const spy = spyOn(githubClient, "getOctokit").mockReturnValue(
+      makeReleaseMock(async () => {
+        throw { status: 422, message: "Validation failed" };
+      }),
+    );
 
     const parsed = JSON.parse(
       await run({
@@ -141,6 +149,91 @@ describe("release_create", () => {
 
     expect(parsed.error.code).toBe("VALIDATION");
     expect(parsed.error.message).toBe("Validation failed");
+
+    spy.mockRestore();
+  });
+
+  test("dryRun returns planned envelope without calling any mutation", async () => {
+    let createCalled = false;
+    const spy = spyOn(githubClient, "getOctokit").mockReturnValue(
+      makeReleaseMock(async () => {
+        createCalled = true;
+        return {};
+      }),
+    );
+
+    const parsed = JSON.parse(
+      await run({
+        owner: "Rethunk-AI",
+        repo: "test-repo",
+        tag: "v2.0.0",
+        name: "Version 2",
+        draft: false,
+        prerelease: true,
+        dryRun: true,
+      }),
+    ) as { tag: string; draft: boolean; prerelease: boolean; dryRun: boolean };
+
+    expect(createCalled).toBe(false);
+    expect(parsed.dryRun).toBe(true);
+    expect(parsed.tag).toBe("v2.0.0");
+    expect(parsed.draft).toBe(false);
+    expect(parsed.prerelease).toBe(true);
+
+    spy.mockRestore();
+  });
+
+  test("warns when both generateNotes and body are provided", async () => {
+    const spy = spyOn(githubClient, "getOctokit").mockReturnValue(
+      makeReleaseMock(async (params) => ({
+        data: {
+          html_url: "https://github.com/o/r/releases/tag/v1.0.0",
+          id: 1,
+          tag_name: params.tag_name,
+          draft: false,
+          prerelease: false,
+        },
+      })),
+    );
+
+    const parsed = JSON.parse(
+      await run({
+        owner: "Rethunk-AI",
+        repo: "test-repo",
+        tag: "v1.0.0",
+        body: "Manual notes",
+        generateNotes: true,
+      }),
+    ) as { warnings?: string[]; url: string };
+
+    expect(parsed.warnings).toBeDefined();
+    expect(parsed.warnings?.length).toBeGreaterThan(0);
+    expect(parsed.warnings?.[0]).toContain("generateNotes");
+
+    spy.mockRestore();
+  });
+
+  test("returns CONFLICT error when release already exists for the tag", async () => {
+    const spy = spyOn(githubClient, "getOctokit").mockReturnValue(
+      makeReleaseMock(
+        async () => {
+          throw new Error("should not reach createRelease");
+        },
+        // getReleaseByTag returns successfully (release exists)
+        async () => ({ data: { id: 42, html_url: "https://github.com/o/r/releases/tag/v1.0.0" } }),
+      ),
+    );
+
+    const parsed = JSON.parse(
+      await run({
+        owner: "Rethunk-AI",
+        repo: "test-repo",
+        tag: "v1.0.0",
+      }),
+    ) as { error: { code: string; message: string } };
+
+    expect(parsed.error.code).toBe("VALIDATION");
+    expect(parsed.error.message).toContain("already exists");
 
     spy.mockRestore();
   });
