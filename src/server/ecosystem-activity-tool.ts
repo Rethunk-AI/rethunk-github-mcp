@@ -35,7 +35,7 @@ interface HistoryQueryResult {
         };
       } | null;
     } | null;
-  };
+  } | null;
 }
 
 interface EcosystemCommit {
@@ -99,6 +99,20 @@ async function fetchRepoCommits(
         since: sinceIso,
         path: path ?? null,
       });
+      if (!data.repository) {
+        // Repository not found or inaccessible — surface as NOT_FOUND rather than TypeError
+        return {
+          owner,
+          repo,
+          commitCount: 0,
+          error: gh.classifyError(
+            Object.assign(new Error(`Repository ${owner}/${repo} not found or inaccessible.`), {
+              status: 404,
+            }),
+          ),
+          commits: [],
+        };
+      }
       const nodes = data.repository.defaultBranchRef?.target?.history.nodes ?? [];
       for (const n of nodes) {
         allNodes.set(n.oid, n);
