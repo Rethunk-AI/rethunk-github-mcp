@@ -27,9 +27,10 @@ interface ChangelogEntry {
 // Helpers
 // ---------------------------------------------------------------------------
 
+const LABEL_ORDER = ["breaking", "feat", "fix", "docs", "chore", "deps"];
+
 /** Group entries by their first label, or "Other" if unlabeled. */
 function groupByLabel(entries: ChangelogEntry[]): Map<string, ChangelogEntry[]> {
-  const LABEL_ORDER = ["breaking", "feat", "fix", "docs", "chore", "deps"];
   const groups = new Map<string, ChangelogEntry[]>();
   for (const e of entries) {
     const label = e.pr?.labels.find((l) => LABEL_ORDER.includes(l.toLowerCase())) ?? "other";
@@ -38,6 +39,31 @@ function groupByLabel(entries: ChangelogEntry[]): Map<string, ChangelogEntry[]> 
     groups.get(key)?.push(e);
   }
   return groups;
+}
+
+/**
+ * Iterate a group map in LABEL_ORDER order, with any unrecognised labels after,
+ * and "Other" last.  Returns [label, entries] pairs.
+ */
+function orderedGroups(groups: Map<string, ChangelogEntry[]>): [string, ChangelogEntry[]][] {
+  const result: [string, ChangelogEntry[]][] = [];
+  // Emit recognised labels first, in canonical order
+  for (const raw of LABEL_ORDER) {
+    const key = raw.charAt(0).toUpperCase() + raw.slice(1);
+    const group = groups.get(key);
+    if (group) result.push([key, group]);
+  }
+  // Emit any keys that aren't in LABEL_ORDER and aren't "Other"
+  for (const [key, group] of groups) {
+    const lower = key.toLowerCase();
+    if (!LABEL_ORDER.includes(lower) && lower !== "other") {
+      result.push([key, group]);
+    }
+  }
+  // Emit "Other" last
+  const other = groups.get("Other");
+  if (other) result.push(["Other", other]);
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -145,7 +171,7 @@ export function registerChangelogDraftTool(server: FastMCP): void {
 
         const groups = groupByLabel(entries);
 
-        for (const [label, group] of groups) {
+        for (const [label, group] of orderedGroups(groups)) {
           lines.push(`### ${label}`, "");
           for (const e of group) {
             const prRef = e.pr
