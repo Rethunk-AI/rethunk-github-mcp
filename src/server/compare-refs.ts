@@ -53,8 +53,11 @@ export function mapCommitHistoryNodes(nodes: CommitHistoryNode[]): CommitEntry[]
 
 export function filterCommitsAfterPin(commits: CommitEntry[], pinnedSha: string): CommitEntry[] {
   return commits.filter((c) => {
-    // sha7 prefix match for the pinned commit
-    return !pinnedSha.startsWith(c.sha7) && sha7(pinnedSha) !== c.sha7;
+    // Normalize both sides to the shorter of the two lengths before comparing
+    // so that a 12-char pin doesn't fail to match a 7-char sha7 field, and
+    // a full 40-char pin is correctly compared against a 7-char sha7 field.
+    const prefixLen = Math.min(pinnedSha.length, c.sha7.length);
+    return pinnedSha.substring(0, prefixLen) !== c.sha7.substring(0, prefixLen);
   });
 }
 
@@ -93,6 +96,9 @@ export async function resolveRef(
  * optionally filtering to a single file path.
  *
  * Returns commits sorted newest-first (GraphQL default).
+ *
+ * All dynamic values (`since`, `path`, `limit`) are passed as typed GraphQL
+ * variables to prevent injection; they are never interpolated into the query string.
  */
 export async function fetchCommitHistory(
   owner: string,
@@ -105,15 +111,20 @@ export async function fetchCommitHistory(
   } = {},
 ): Promise<{ commits: CommitEntry[]; defaultBranch: string }> {
   const limit = opts.limit ?? 50;
-  const sinceClause = opts.since ? `, since: "${opts.since}"` : "";
-  const pathClause = opts.path ? `, path: "${opts.path}"` : "";
 
-  const query = `query($owner:String!,$repo:String!,$expr:String!){
+  // Use typed GraphQL variables for all user-supplied values.
+  // $since is typed as GitTimestamp (ISO8601 string) and is optional (null = omit).
+  // $path is typed as String and is optional (null = omit).
+  // $limit is typed as Int.
+  const query = `query(
+    $owner:String!,$repo:String!,$expr:String!,
+    $limit:Int!,$since:GitTimestamp,$path:String
+  ){
     repository(owner:$owner,name:$repo){
       defaultBranchRef { name }
       object(expression:$expr){
         ...on Commit{
-          history(first:${limit}${sinceClause}${pathClause}){
+          history(first:$limit,since:$since,path:$path){
             nodes{
               oid messageHeadline committedDate
               author{ name user{ login } }
@@ -124,7 +135,14 @@ export async function fetchCommitHistory(
     }
   }`;
 
-  const data = await graphqlQuery<HistoryQueryResult>(query, { owner, repo, expr: headRef });
+  const data = await graphqlQuery<HistoryQueryResult>(query, {
+    owner,
+    repo,
+    expr: headRef,
+    limit,
+    since: opts.since ?? null,
+    path: opts.path ?? null,
+  });
   const defaultBranch = data.repository.defaultBranchRef?.name ?? "main";
   const nodes = data.repository.object?.history.nodes ?? [];
 
@@ -140,6 +158,10 @@ export async function fetchCommitHistory(
  * committedDate is strictly after the pinned commit's committedDate.  This is an
  * approximation (merge-commit topologies are ignored) but is reliable for linear
  * or near-linear histories which is the common case for upstream pins.
+ *
+ * `history(since:)` is inclusive, so commits that share the pinned commit's
+ * timestamp may be returned alongside the pinned commit itself. We deduplicate
+ * by full SHA before returning to prevent off-by-one counts.
  *
  * Returns `{ behindBy, commits }` where `commits` is capped at `limit`.
  */
@@ -162,8 +184,19 @@ export async function countBehind(
     limit,
   });
 
-  // Exclude the pinned commit itself (same oid or older)
-  const newer = filterCommitsAfterPin(commits, pinnedSha);
+  // Exclude the pinned commit by full SHA match (history(since:) is inclusive,
+  // so the pinned commit itself appears in results).
+  // Also deduplicate by sha7 in case sibling commits share the same timestamp.
+  const seen = new Set<string>();
+  const newer = commits.filter((c) => {
+    // Exclude if this commit IS the pinned commit (full-SHA prefix match)
+    const prefixLen = Math.min(pinned.oid.length, c.sha7.length);
+    if (pinned.oid.substring(0, prefixLen) === c.sha7.substring(0, prefixLen)) return false;
+    // Deduplicate by sha7
+    if (seen.has(c.sha7)) return false;
+    seen.add(c.sha7);
+    return true;
+  });
 
   return { behindBy: newer.length, commits: newer };
 }
