@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 
+import * as githubClient from "./github-client.js";
 import {
   asyncPool,
   classifyError,
@@ -49,6 +50,30 @@ describe("asyncPool", () => {
         return n;
       }),
     ).rejects.toThrow("boom");
+  });
+
+  test("does not leak unhandled rejections when fn rejects (Bug 1)", async () => {
+    // All items reject — pool should reject once and not hang or leave dangling promises
+    const items = [1, 2, 3, 4];
+    await expect(
+      asyncPool(items, 2, async () => {
+        throw new Error("always fail");
+      }),
+    ).rejects.toThrow("always fail");
+  });
+
+  test("first rejection surfaces immediately; remaining items are cleaned up (Bug 1)", async () => {
+    const started: number[] = [];
+    // Item 1 rejects instantly; items 2-5 succeed after a delay
+    const items = [1, 2, 3, 4, 5];
+    await expect(
+      asyncPool(items, 3, async (n) => {
+        started.push(n);
+        if (n === 1) throw new Error("item-1-fail");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return n;
+      }),
+    ).rejects.toThrow("item-1-fail");
   });
 
   test("concurrency 1 processes sequentially", async () => {
@@ -110,6 +135,18 @@ describe("parseGitHubRemoteUrl", () => {
 
   test("returns undefined for empty string", () => {
     expect(parseGitHubRemoteUrl("")).toBeUndefined();
+  });
+
+  test("rejects github.com.evil.com (unanchored host exploit, Bug 8)", () => {
+    expect(parseGitHubRemoteUrl("git@github.com.evil.com:owner/repo.git")).toBeUndefined();
+    expect(parseGitHubRemoteUrl("https://github.com.evil.com/owner/repo.git")).toBeUndefined();
+  });
+
+  test("parses ssh:// prefix form", () => {
+    expect(parseGitHubRemoteUrl("ssh://git@github.com:owner/repo.git")).toEqual({
+      owner: "owner",
+      repo: "repo",
+    });
   });
 });
 
@@ -193,6 +230,26 @@ describe("classifyError", () => {
     expect(env.code).toBe("INTERNAL");
     expect(env.message).toBe("unknown");
   });
+
+  test("scrubs GitHub PAT token from error message (Bug 10)", () => {
+    const env = classifyError({ status: 500, message: "bad token ghp_AbCdEf123456 found" });
+    expect(env.message).not.toContain("ghp_");
+    expect(env.message).toContain("***");
+  });
+
+  test("scrubs 'token <value>' form from error message (Bug 10)", () => {
+    const env = classifyError({ status: 500, message: "Authorization: token mysecrettoken123" });
+    expect(env.message).not.toContain("mysecrettoken123");
+    expect(env.message).toContain("token ***");
+  });
+
+  test("scrubs tokens from GraphQL errors array (Bug 10)", () => {
+    const env = classifyError({
+      errors: [{ message: "token ghs_secretValue leaked" }],
+    });
+    expect(env.message).not.toContain("ghs_");
+    expect(env.message).toContain("***");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -214,11 +271,43 @@ describe("getOctokit", () => {
 });
 
 // ---------------------------------------------------------------------------
-// fetchLatestSemverTag — real API smoke test
+// fetchLatestSemverTag — unit test for sort fix + live smoke test
 // ---------------------------------------------------------------------------
 
 describe("fetchLatestSemverTag", () => {
-  test("returns a semver tag string for a repo that has releases", async () => {
+  test("returns the highest semver tag even when tags are not sorted (Bug 11)", async () => {
+    // API returns tags in push order: v1.0.0 pushed last but v1.2.0 is highest
+    const spy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      repos: {
+        listTags: async () => ({
+          data: [
+            { name: "v1.0.0" },
+            { name: "v1.2.0" },
+            { name: "v0.9.0" },
+            { name: "not-a-semver" },
+          ],
+        }),
+      },
+    } as unknown as ReturnType<typeof githubClient.getOctokit>);
+
+    const tag = await fetchLatestSemverTag("owner", "repo");
+    expect(tag).toBe("v1.2.0");
+    spy.mockRestore();
+  });
+
+  test("returns null when no semver tags exist", async () => {
+    const spy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      repos: {
+        listTags: async () => ({ data: [{ name: "latest" }, { name: "stable" }] }),
+      },
+    } as unknown as ReturnType<typeof githubClient.getOctokit>);
+
+    const tag = await fetchLatestSemverTag("owner", "repo");
+    expect(tag).toBeNull();
+    spy.mockRestore();
+  });
+
+  test("returns a semver tag string for a live repo that has releases", async () => {
     try {
       const tag = await fetchLatestSemverTag("Rethunk-AI", "rethunk-github-mcp");
       // If we get a result, it should match semver
@@ -244,7 +333,7 @@ describe("fetchLatestSemverTag", () => {
 });
 
 // ---------------------------------------------------------------------------
-// fetchPRMetadata — real API smoke test
+// fetchPRMetadata — unit tests for batching (Bug 9) + live smoke test
 // ---------------------------------------------------------------------------
 
 describe("fetchPRMetadata", () => {
@@ -253,7 +342,39 @@ describe("fetchPRMetadata", () => {
     expect(map.size).toBe(0);
   });
 
-  test("returns map with PR data for valid PR numbers", async () => {
+  test("issues multiple GraphQL queries when prNumbers > 20 (Bug 9)", async () => {
+    const queryCalls: number[][] = [];
+
+    // Spy on graphqlQuery to capture which PR numbers are requested per call
+    const spy = spyOn(githubClient, "graphqlQuery").mockImplementation(
+      async (_query: string, _variables?: Record<string, unknown>) => {
+        // Collect the batch size from the aliases in the query string
+        const matches = (_query as string).match(/pr\d+/g) ?? [];
+        const nums = matches.map((m) => Number(m.replace("pr", "")));
+        queryCalls.push(nums);
+        // Return all requested PRs as mocked data
+        const repoData: Record<string, { number: number; title: string; labels: { nodes: [] } }> =
+          {};
+        for (const n of nums) {
+          repoData[`pr${n}`] = { number: n, title: `PR ${n}`, labels: { nodes: [] } };
+        }
+        return { repository: repoData };
+      },
+    );
+
+    // 25 PRs exceeds the chunk limit of 20
+    const prNumbers = Array.from({ length: 25 }, (_, i) => i + 1);
+    const map = await fetchPRMetadata("owner", "repo", prNumbers);
+
+    expect(queryCalls.length).toBe(2); // chunk 1: 20 items, chunk 2: 5 items
+    expect(queryCalls[0]?.length).toBe(20);
+    expect(queryCalls[1]?.length).toBe(5);
+    expect(map.size).toBe(25);
+
+    spy.mockRestore();
+  });
+
+  test("returns map with PR data for valid PR numbers (live)", async () => {
     // PR #1 is likely the first pull request — skip gracefully if not found
     const map = await fetchPRMetadata("Rethunk-AI", "rethunk-github-mcp", [1]);
     // If auth is absent or PR doesn't exist the map will be empty — acceptable
