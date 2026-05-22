@@ -130,4 +130,120 @@ describe("ci_diagnosis tool (mocked)", () => {
     const parsed = JSON.parse(text) as { error: { code: string } };
     expect(parsed.error.code).toBe("NO_CI_RUNS");
   });
+
+  test("prNumber path: fetches run via PR head SHA, grepLog filters log lines, markdown shows Failed Jobs", async () => {
+    const run = {
+      id: 7777,
+      name: "CI",
+      conclusion: "failure",
+      head_branch: "fix/thing",
+      html_url: "https://github.com/Acme/svc/actions/runs/7777",
+      head_sha: "deadbeef1234",
+      head_commit: { message: "fix: a thing", author: { name: "Bob" } },
+    };
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      pulls: {
+        get: async () => ({ data: { head: { sha: "deadbeef1234" } } }),
+      },
+      actions: {
+        listWorkflowRunsForRepo: async () => ({ data: { workflow_runs: [run] } }),
+        listJobsForWorkflowRun: async () => ({
+          data: { jobs: [{ id: 55, name: "Lint", conclusion: "failure" }] },
+        }),
+        downloadJobLogsForWorkflowRun: async () => ({
+          data: "noise line\nError: lint failed\nanother noise line\n",
+        }),
+      },
+    } as never);
+
+    const tool = captureTool(registerCiDiagnosisTool);
+    const text = await tool({
+      owner: "Acme",
+      repo: "svc",
+      prNumber: 99,
+      grepLog: "Error",
+      format: "markdown",
+    });
+    octokitSpy.mockRestore();
+
+    expect(text).toContain("## Failed Jobs");
+    expect(text).toContain("Error: lint failed");
+    expect(text).not.toContain("noise line");
+  });
+
+  test("ref path: picks failed run over first run; log download throws → logs unavailable", async () => {
+    const successRun = {
+      id: 1001,
+      name: "CI",
+      conclusion: "success",
+      head_branch: "main",
+      html_url: "https://github.com/Acme/svc/actions/runs/1001",
+      head_sha: "aaa0000000001",
+      head_commit: { message: "chore: bump", author: { name: "Carol" } },
+    };
+    const failedRun = {
+      id: 1002,
+      name: "CI",
+      conclusion: "failure",
+      head_branch: "main",
+      html_url: "https://github.com/Acme/svc/actions/runs/1002",
+      head_sha: "bbb0000000002",
+      head_commit: { message: "feat: new thing", author: { name: "Dave" } },
+    };
+    const errSpy = spyOn(console, "error").mockImplementation(() => undefined);
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      actions: {
+        listWorkflowRunsForRepo: async () => ({
+          data: { workflow_runs: [successRun, failedRun] },
+        }),
+        listJobsForWorkflowRun: async () => ({
+          data: { jobs: [{ id: 66, name: "Test", conclusion: "failure" }] },
+        }),
+        downloadJobLogsForWorkflowRun: async () => {
+          throw new Error("logs expired");
+        },
+      },
+    } as never);
+
+    const tool = captureTool(registerCiDiagnosisTool);
+    const text = await tool({
+      owner: "Acme",
+      repo: "svc",
+      ref: "main",
+      format: "json",
+    });
+    octokitSpy.mockRestore();
+    errSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as {
+      runId: number;
+      failedJobs: Array<{ failedSteps: Array<{ log: string }> }>;
+    };
+    expect(parsed.runId).toBe(1002);
+    expect(parsed.failedJobs[0]?.failedSteps[0]?.log).toBe("[logs unavailable]");
+  });
+
+  test("outer catch: classifyError response when getWorkflowRun throws", async () => {
+    const errSpy = spyOn(console, "error").mockImplementation(() => undefined);
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      actions: {
+        getWorkflowRun: async () => {
+          throw new Error("network failure");
+        },
+      },
+    } as never);
+
+    const tool = captureTool(registerCiDiagnosisTool);
+    const text = await tool({
+      owner: "Acme",
+      repo: "svc",
+      runId: 9999,
+      format: "json",
+    });
+    octokitSpy.mockRestore();
+    errSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as { error: unknown };
+    expect(parsed.error).toBeDefined();
+  });
 });
