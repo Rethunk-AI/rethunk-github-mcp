@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 
 import { resetAuthCache } from "./github-auth.js";
 import * as githubClient from "./github-client.js";
@@ -298,6 +298,50 @@ describe("issue_from_template", () => {
         `Expected tool success with case-insensitive matching: ${JSON.stringify(result)}`,
       );
     }
+  });
+
+  describe("dryRun preview", () => {
+    test("fetches+renders template and returns plan without calling issues.create", async () => {
+      const create = mock(async () => ({ data: {} }));
+      const spy = spyOn(githubClient, "getOctokit").mockReturnValue({
+        repos: {
+          getContent: async ({ path }: { path: string }) => {
+            if (path === ".github/ISSUE_TEMPLATE") {
+              return {
+                data: [{ type: "file", name: "bug.md", path: ".github/ISSUE_TEMPLATE/bug.md" }],
+              };
+            }
+            const b64 = Buffer.from("Description: {{ desc }}", "utf-8").toString("base64");
+            return { data: { type: "file", content: b64 } };
+          },
+        },
+        issues: { create },
+      } as unknown as ReturnType<typeof githubClient.getOctokit>);
+
+      const parsed = JSON.parse(
+        await captureTool(registerIssueFromTemplateTool, "issue_from_template", {
+          owner: "o",
+          repo: "r",
+          template: "bug.md",
+          variables: { desc: "crash on startup" },
+          title: "Bug: crash",
+          labels: ["bug", "p1"],
+          dryRun: true,
+        }),
+      ) as { dryRun: boolean; plan: Record<string, unknown> };
+
+      expect(parsed.dryRun).toBe(true);
+      expect(parsed.plan).toMatchObject({
+        owner: "o",
+        repo: "r",
+        title: "Bug: crash",
+        bodyPreview: "Description: crash on startup",
+        labels: ["bug", "p1"],
+      });
+      expect(create).not.toHaveBeenCalled();
+
+      spy.mockRestore();
+    });
   });
 
   test("empty variables map", async () => {

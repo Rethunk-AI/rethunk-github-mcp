@@ -2,7 +2,7 @@ import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
 import { classifyError, getOctokit } from "./github-client.js";
-import { errorRespond, jsonRespond, mkError } from "./json.js";
+import { errorRespond, jsonRespond, mkError, truncateText } from "./json.js";
 import { RepoRefSchema } from "./schemas.js";
 
 // ---------------------------------------------------------------------------
@@ -13,6 +13,17 @@ export interface IssueFromTemplateResult {
   number: number;
   url: string;
   title: string;
+}
+
+export interface IssueFromTemplateDryRunResult {
+  dryRun: true;
+  plan: {
+    owner: string;
+    repo: string;
+    title: string;
+    bodyPreview: string;
+    labels: string[];
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -169,12 +180,28 @@ export function registerIssueFromTemplateTool(server: FastMCP): void {
         .optional()
         .describe("GitHub usernames to assign to the issue."),
       labels: z.array(z.string()).optional().describe("Labels to apply to the issue."),
+      dryRun: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "If true, fetch and render the template (variable substitution included), then return the planned issue (owner/repo/title/bodyPreview/labels) WITHOUT executing any mutation.",
+        ),
     }),
     execute: async (args) => {
       const auth = gateAuth();
       if (!auth.ok) return errorRespond(auth.envelope);
 
-      const { owner, repo, template: templateName, variables, title, assignees, labels } = args;
+      const {
+        owner,
+        repo,
+        template: templateName,
+        variables,
+        title,
+        assignees,
+        labels,
+        dryRun,
+      } = args;
 
       try {
         const octokit = getOctokit();
@@ -213,6 +240,17 @@ export function registerIssueFromTemplateTool(server: FastMCP): void {
         // Substitute variables in the template content
         // biome-ignore lint/suspicious/noExplicitAny: Runtime variable conversion from schema
         const body = substituteVariables(templateContent, variables as any);
+
+        if (dryRun) {
+          const plan: IssueFromTemplateDryRunResult["plan"] = {
+            owner,
+            repo,
+            title,
+            bodyPreview: truncateText(body, 200),
+            labels: labels ?? [],
+          };
+          return jsonRespond({ dryRun: true, plan });
+        }
 
         // Create the issue with the rendered template
         const requestParams: Parameters<typeof octokit.issues.create>[0] = {

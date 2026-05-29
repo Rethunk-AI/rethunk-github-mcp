@@ -9,6 +9,20 @@ export interface CheckRunCreateResult {
   url: string;
 }
 
+export interface CheckRunCreateDryRunResult {
+  dryRun: true;
+  plan: {
+    owner: string;
+    repo: string;
+    name: string;
+    headSha: string;
+    status: string;
+    conclusion?: string;
+    title?: string;
+    summary?: string;
+  };
+}
+
 export function registerCheckRunCreateTool(server: FastMCP): void {
   server.addTool({
     name: "check_run_create",
@@ -33,6 +47,13 @@ export function registerCheckRunCreateTool(server: FastMCP): void {
         ),
       title: z.string().optional().describe("Title of the check run."),
       summary: z.string().optional().describe("Summary of the check run."),
+      dryRun: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "If true, compute and return the planned check run (owner/repo/name/headSha/status/conclusion/title/summary) WITHOUT executing any mutation.",
+        ),
     }),
     execute: async (args) => {
       // gateAuth before try so auth errors are not swallowed by the catch
@@ -40,7 +61,7 @@ export function registerCheckRunCreateTool(server: FastMCP): void {
       if (!auth.ok) return errorRespond(auth.envelope);
 
       try {
-        const { owner, repo, name, headSha, status, conclusion, title, summary } = args;
+        const { owner, repo, name, headSha, status, conclusion, title, summary, dryRun } = args;
 
         // If status is completed, conclusion is required
         if (status === "completed" && !conclusion) {
@@ -51,6 +72,20 @@ export function registerCheckRunCreateTool(server: FastMCP): void {
             suggestedFix:
               "Provide a conclusion: success, failure, neutral, cancelled, skipped, or timed_out.",
           });
+        }
+
+        if (dryRun) {
+          const plan: CheckRunCreateDryRunResult["plan"] = {
+            owner,
+            repo,
+            name,
+            headSha,
+            status: status ?? "queued",
+            ...(conclusion !== undefined ? { conclusion } : {}),
+            ...(title !== undefined ? { title } : {}),
+            ...(summary !== undefined ? { summary } : {}),
+          };
+          return jsonRespond({ dryRun: true, plan });
         }
 
         const octokit = getOctokit();

@@ -1,9 +1,64 @@
-import { describe, expect, test } from "bun:test";
-
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { registerCheckRunCreateTool } from "./check-run-create-tool.js";
+import { resetAuthCache } from "./github-auth.js";
+import * as githubClient from "./github-client.js";
 import { captureTool } from "./test-harness.js";
 
 describe("check_run_create tool", () => {
+  describe("dryRun preview", () => {
+    const originalGithubToken = process.env.GITHUB_TOKEN;
+
+    beforeEach(() => {
+      process.env.GITHUB_TOKEN = "test-token";
+      resetAuthCache();
+    });
+
+    afterEach(() => {
+      if (originalGithubToken === undefined) {
+        delete process.env.GITHUB_TOKEN;
+      } else {
+        process.env.GITHUB_TOKEN = originalGithubToken;
+      }
+      resetAuthCache();
+    });
+
+    test("returns plan without calling checks.create", async () => {
+      const create = mock(async () => ({ data: {} }));
+      const spy = spyOn(githubClient, "getOctokit").mockReturnValue({
+        checks: { create },
+      } as unknown as ReturnType<typeof githubClient.getOctokit>);
+
+      const parsed = JSON.parse(
+        await captureTool(registerCheckRunCreateTool, "check_run_create", {
+          owner: "o",
+          repo: "r",
+          name: "my-check",
+          headSha: "abc1234",
+          status: "completed",
+          conclusion: "success",
+          title: "All passing",
+          summary: "100% green",
+          dryRun: true,
+        }),
+      ) as { dryRun: boolean; plan: Record<string, unknown> };
+
+      expect(parsed.dryRun).toBe(true);
+      expect(parsed.plan).toMatchObject({
+        owner: "o",
+        repo: "r",
+        name: "my-check",
+        headSha: "abc1234",
+        status: "completed",
+        conclusion: "success",
+        title: "All passing",
+        summary: "100% green",
+      });
+      expect(create).not.toHaveBeenCalled();
+
+      spy.mockRestore();
+    });
+  });
+
   const run = captureTool(registerCheckRunCreateTool);
 
   test("requires conclusion when status is completed", async () => {

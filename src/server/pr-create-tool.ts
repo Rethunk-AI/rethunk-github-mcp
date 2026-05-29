@@ -2,7 +2,7 @@ import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
 import { classifyError, getOctokit } from "./github-client.js";
-import { errorRespond, jsonRespond } from "./json.js";
+import { errorRespond, jsonRespond, truncateText } from "./json.js";
 import { RepoRefSchema } from "./schemas.js";
 
 // ---------------------------------------------------------------------------
@@ -14,6 +14,19 @@ export interface PrCreateResult {
   url: string;
   state: string;
   draft: boolean;
+}
+
+export interface PrCreateDryRunResult {
+  dryRun: true;
+  plan: {
+    owner: string;
+    repo: string;
+    head: string;
+    base: string;
+    title: string;
+    draft: boolean;
+    bodyPreview: string;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -45,15 +58,35 @@ export function registerPrCreateTool(server: FastMCP): void {
         .optional()
         .default(true)
         .describe("Allow repository maintainers to modify the PR. Defaults to true."),
+      dryRun: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "If true, compute and return the planned PR creation (owner/repo/head/base/title/draft/bodyPreview) WITHOUT executing any mutation.",
+        ),
     }),
     execute: async (args) => {
       const auth = gateAuth();
       if (!auth.ok) return errorRespond(auth.envelope);
 
-      const { owner, repo, title, body, head, base, draft, maintainerCanModify } = args;
+      const { owner, repo, title, body, head, base, draft, maintainerCanModify, dryRun } = args;
 
       try {
         const octokit = getOctokit();
+
+        if (dryRun) {
+          const plan: PrCreateDryRunResult["plan"] = {
+            owner,
+            repo,
+            head,
+            base: base ?? "main",
+            title,
+            draft: draft ?? false,
+            bodyPreview: body ? truncateText(body, 200) : "",
+          };
+          return jsonRespond({ dryRun: true, plan });
+        }
 
         // Build PR creation request
         const requestParams: Parameters<typeof octokit.pulls.create>[0] = {

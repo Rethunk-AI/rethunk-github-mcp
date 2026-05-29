@@ -2,7 +2,7 @@ import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
 import { classifyError, getOctokit } from "./github-client.js";
-import { errorRespond, jsonRespond } from "./json.js";
+import { errorRespond, jsonRespond, truncateText } from "./json.js";
 import { RepoRefSchema } from "./schemas.js";
 
 // ---------------------------------------------------------------------------
@@ -21,6 +21,18 @@ export interface PrCommentBatchResult {
   state: string;
   /** Number of inline comments submitted in the review request. GitHub does not return created comments in the review response, so this reflects the input count (commentsRequested). */
   commentsRequested: number;
+}
+
+export interface PrCommentBatchDryRunResult {
+  dryRun: true;
+  plan: {
+    owner: string;
+    repo: string;
+    prNumber: number;
+    event: string;
+    commentCount: number;
+    comments: { path: string; line: number; bodySnippet: string }[];
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -51,15 +63,38 @@ export function registerPrCommentBatchTool(server: FastMCP): void {
         )
         .optional()
         .describe("Array of inline comments (path, line, body)."),
+      dryRun: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "If true, compute and return the planned review (owner/repo/prNumber/event/commentCount/comments) WITHOUT executing any mutation.",
+        ),
     }),
     execute: async (args) => {
       const auth = gateAuth();
       if (!auth.ok) return errorRespond(auth.envelope);
 
-      const { owner, repo, pullNumber, body, event, comments } = args;
+      const { owner, repo, pullNumber, body, event, comments, dryRun } = args;
 
       try {
         const octokit = getOctokit();
+
+        if (dryRun) {
+          const plan: PrCommentBatchDryRunResult["plan"] = {
+            owner,
+            repo,
+            prNumber: pullNumber,
+            event: event ?? "COMMENT",
+            commentCount: comments?.length ?? 0,
+            comments: (comments ?? []).map((c) => ({
+              path: c.path,
+              line: c.line,
+              bodySnippet: truncateText(c.body, 120),
+            })),
+          };
+          return jsonRespond({ dryRun: true, plan });
+        }
 
         // Build the review request
         const reviewRequest: Parameters<typeof octokit.pulls.createReview>[0] = {
