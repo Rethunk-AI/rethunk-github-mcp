@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-05-29
+
 ### Added
 
 - **`security_alerts` tool** (read) — rolls up Dependabot and Code Scanning alerts by severity for a repository. Requires `security_events` scope (or `repo`). Returns `{ rollup, dependabot, codeScanning }` with per-source `enabled`, `total`, `truncatedCount`, and alert arrays. A 403/404 on either source reports `{ enabled: false, reason }` without aborting the other source.
