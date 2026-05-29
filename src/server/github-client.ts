@@ -135,6 +135,8 @@ export function classifyError(err: unknown): McpErrorEnvelope {
     message?: string;
     response?: { headers?: Record<string, string | undefined> };
     errors?: { message?: string }[];
+    /** Marker set by withTimeout so the error is retryable. */
+    _isTimeout?: boolean;
   };
   const rawMessage = typeof e?.message === "string" && e.message.length > 0 ? e.message : "unknown";
   const message = scrubTokens(rawMessage);
@@ -148,7 +150,7 @@ export function classifyError(err: unknown): McpErrorEnvelope {
       suggestedFix: "Verify GITHUB_TOKEN/GH_TOKEN is valid and has required scopes.",
     });
   }
-  if (status === 403) {
+  if (status === 403 || status === 429) {
     const remaining = e.response?.headers?.["x-ratelimit-remaining"];
     if (remaining === "0") {
       const reset = e.response?.headers?.["x-ratelimit-reset"];
@@ -156,6 +158,17 @@ export function classifyError(err: unknown): McpErrorEnvelope {
         ? `Rate limit resets at ${new Date(Number(reset) * 1000).toISOString()}.`
         : "Wait for rate limit to reset.";
       return mkError("RATE_LIMITED", message, { retryable: true, suggestedFix });
+    }
+    const retryAfter = e.response?.headers?.["retry-after"];
+    if (retryAfter !== undefined) {
+      const seconds = Number(retryAfter);
+      const suggestedFix = Number.isNaN(seconds)
+        ? `Secondary rate limit hit; retry after: ${retryAfter}.`
+        : `Secondary rate limit hit; retry after ${seconds} second(s).`;
+      return mkError("RATE_LIMITED", message, { retryable: true, suggestedFix });
+    }
+    if (status === 429) {
+      return mkError("RATE_LIMITED", message, { retryable: true });
     }
     return mkError("PERMISSION_DENIED", message, {
       suggestedFix: "Check token scopes or repo access.",
@@ -167,6 +180,11 @@ export function classifyError(err: unknown): McpErrorEnvelope {
     return mkError("UPSTREAM_FAILURE", message, { retryable: true });
   }
 
+  // Timeout errors from withTimeout are retryable upstream failures
+  if (e?._isTimeout === true) {
+    return mkError("UPSTREAM_FAILURE", message, { retryable: true });
+  }
+
   // GraphQL-level error (no HTTP status but has errors array)
   if (Array.isArray(e?.errors) && e.errors.length > 0) {
     const firstMessage = scrubTokens(e.errors[0]?.message ?? rawMessage);
@@ -174,6 +192,202 @@ export function classifyError(err: unknown): McpErrorEnvelope {
   }
 
   return mkError("INTERNAL", message);
+}
+
+// ---------------------------------------------------------------------------
+// withRetry — exponential backoff with retryable-error detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Default maximum number of retry attempts.
+ * Overridden by `GITHUB_API_MAX_RETRIES` env var (integer ≥0).
+ */
+const DEFAULT_MAX_RETRIES = 2;
+
+/**
+ * Default base delay in milliseconds for exponential backoff.
+ * Overridden by `GITHUB_API_RETRY_BASE_MS` env var.
+ */
+const DEFAULT_RETRY_BASE_MS = 500;
+
+/** Maximum delay (ms) honored from `retry-after` / `x-ratelimit-reset` headers. */
+const MAX_HEADER_DELAY_MS = 60_000;
+
+function resolveMaxRetries(): number {
+  const parsed = Number.parseInt(process.env.GITHUB_API_MAX_RETRIES ?? "", 10);
+  return Number.isNaN(parsed) ? DEFAULT_MAX_RETRIES : Math.max(0, parsed);
+}
+
+function resolveBaseDelayMs(): number {
+  const parsed = Number.parseInt(process.env.GITHUB_API_RETRY_BASE_MS ?? "", 10);
+  return Number.isNaN(parsed) ? DEFAULT_RETRY_BASE_MS : Math.max(0, parsed);
+}
+
+/**
+ * Extract the header-advised delay (ms) from an error's response headers.
+ * Honors `retry-after` (seconds) or `x-ratelimit-reset` (Unix epoch), capped
+ * at {@link MAX_HEADER_DELAY_MS}.
+ */
+function headerDelay(err: unknown): number | undefined {
+  const e = err as { response?: { headers?: Record<string, string | undefined> } };
+  const headers = e?.response?.headers;
+  if (!headers) return undefined;
+
+  const retryAfter = headers["retry-after"];
+  if (retryAfter !== undefined) {
+    const secs = Number(retryAfter);
+    if (!Number.isNaN(secs) && secs > 0) {
+      return Math.min(secs * 1000, MAX_HEADER_DELAY_MS);
+    }
+  }
+
+  const resetEpoch = headers["x-ratelimit-reset"];
+  if (resetEpoch !== undefined) {
+    const delayMs = Number(resetEpoch) * 1000 - Date.now();
+    if (!Number.isNaN(delayMs) && delayMs > 0) {
+      return Math.min(delayMs, MAX_HEADER_DELAY_MS);
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Retry `fn` with exponential backoff on retryable errors.
+ *
+ * - Non-retryable errors (per {@link classifyError}) rethrow immediately.
+ * - After `maxRetries` exhausted, rethrows the last error.
+ * - If the error carries a `retry-after` or `x-ratelimit-reset` header, that
+ *   delay is used instead of the exponential formula (capped at 60 s).
+ * - `sleep` is injectable for tests (defaults to a real timer).
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts?: {
+    maxRetries?: number;
+    baseDelayMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+  },
+): Promise<T> {
+  const maxRetries =
+    opts?.maxRetries !== undefined ? Math.max(0, opts.maxRetries) : resolveMaxRetries();
+  const baseDelayMs =
+    opts?.baseDelayMs !== undefined ? Math.max(0, opts.baseDelayMs) : resolveBaseDelayMs();
+  const sleep = opts?.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      const classified = classifyError(err);
+      if (!classified.retryable) throw err;
+      if (attempt < maxRetries) {
+        const delay = headerDelay(err) ?? baseDelayMs * 2 ** attempt;
+        await sleep(delay);
+      }
+    }
+  }
+  throw lastError;
+}
+
+// ---------------------------------------------------------------------------
+// withTimeout — race a promise against a deadline
+// ---------------------------------------------------------------------------
+
+/**
+ * Default request timeout in milliseconds.
+ * Overridden by `GITHUB_API_TIMEOUT_MS` env var.
+ */
+export const GITHUB_API_TIMEOUT_MS = (() => {
+  const parsed = Number.parseInt(process.env.GITHUB_API_TIMEOUT_MS ?? "", 10);
+  return Number.isNaN(parsed) ? 30_000 : Math.max(0, parsed);
+})();
+
+/**
+ * Race `promise` against a wall-clock deadline.
+ *
+ * If the promise does not settle within `ms`, rejects with an Error whose
+ * message includes `label` (if provided) and the timeout duration.  The
+ * rejection is tagged with `_isTimeout: true` so {@link classifyError} treats
+ * it as a retryable `UPSTREAM_FAILURE`.
+ *
+ * The internal timer is cleared and unref'd so it never keeps the process alive.
+ */
+export function withTimeout<T>(promise: Promise<T>, ms: number, label?: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const msg = label ? `${label} timed out after ${ms}ms` : `Request timed out after ${ms}ms`;
+      const err = Object.assign(new Error(msg), { _isTimeout: true });
+      reject(err);
+    }, ms);
+
+    if (typeof (timer as NodeJS.Timeout).unref === "function") {
+      (timer as NodeJS.Timeout).unref();
+    }
+
+    promise.then(
+      (val) => {
+        clearTimeout(timer);
+        resolve(val);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
+// asyncPoolSettled / parallelApiSettled — partial-results pool (never aborts)
+// ---------------------------------------------------------------------------
+
+/**
+ * Like {@link asyncPool} but uses `Promise.allSettled` instead of `Promise.all`.
+ * A single failing item never aborts the remaining work; all results are
+ * returned as {@link PromiseSettledResult} values.
+ *
+ * Identical concurrency-limiting logic to {@link asyncPool} — do NOT modify that function.
+ */
+export async function asyncPoolSettled<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const results: Promise<R>[] = [];
+  const executing = new Set<Promise<void>>();
+
+  for (const item of items) {
+    const userP = fn(item);
+    results.push(userP);
+
+    let tracker: Promise<void>;
+    tracker = userP.then(
+      () => {
+        executing.delete(tracker);
+      },
+      () => {
+        executing.delete(tracker);
+      },
+    );
+    executing.add(tracker);
+
+    if (executing.size >= concurrency) {
+      await Promise.race(executing);
+    }
+  }
+
+  return Promise.allSettled(results);
+}
+
+/** Convenience: run API calls with partial-results semantics at default concurrency. */
+export async function parallelApiSettled<T, R>(
+  items: readonly T[],
+  fn: (item: T) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  return asyncPoolSettled(items, GITHUB_API_PARALLELISM, fn);
 }
 
 /** Parse a GitHub remote URL into owner/repo. Handles SSH and HTTPS forms. */

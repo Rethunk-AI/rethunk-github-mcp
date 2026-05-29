@@ -3,13 +3,17 @@ import { describe, expect, spyOn, test } from "bun:test";
 import * as githubClient from "./github-client.js";
 import {
   asyncPool,
+  asyncPoolSettled,
   classifyError,
   fetchLatestSemverTag,
   fetchPRMetadata,
   getOctokit,
   parallelApi,
+  parallelApiSettled,
   parseGitHubRemoteUrl,
   resolveLocalRepoRemote,
+  withRetry,
+  withTimeout,
 } from "./github-client.js";
 
 describe("asyncPool", () => {
@@ -382,5 +386,251 @@ describe("fetchPRMetadata", () => {
     const pr = map.get(1);
     expect(pr).toBeDefined();
     expect(typeof pr?.title).toBe("string");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// classifyError — new secondary rate-limit and bare 429 branches
+// ---------------------------------------------------------------------------
+
+describe("classifyError — secondary rate limits", () => {
+  test("403 + retry-after header → RATE_LIMITED retryable", () => {
+    const env = classifyError({
+      status: 403,
+      message: "You have exceeded a secondary rate limit",
+      response: { headers: { "retry-after": "30" } },
+    });
+    expect(env.code).toBe("RATE_LIMITED");
+    expect(env.retryable).toBe(true);
+    expect(env.suggestedFix).toContain("30");
+  });
+
+  test("429 + retry-after header → RATE_LIMITED retryable", () => {
+    const env = classifyError({
+      status: 429,
+      message: "Too Many Requests",
+      response: { headers: { "retry-after": "10" } },
+    });
+    expect(env.code).toBe("RATE_LIMITED");
+    expect(env.retryable).toBe(true);
+  });
+
+  test("bare 429 (no headers) → RATE_LIMITED retryable", () => {
+    const env = classifyError({ status: 429, message: "Too Many Requests" });
+    expect(env.code).toBe("RATE_LIMITED");
+    expect(env.retryable).toBe(true);
+  });
+
+  test("403 without ratelimit-remaining=0 and without retry-after → PERMISSION_DENIED", () => {
+    const env = classifyError({ status: 403, message: "forbidden" });
+    expect(env.code).toBe("PERMISSION_DENIED");
+    expect(env.retryable).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// withRetry
+// ---------------------------------------------------------------------------
+
+describe("withRetry", () => {
+  test("succeeds on first try without sleeping", async () => {
+    const sleepCalls: number[] = [];
+    const stubSleep = async (ms: number) => {
+      sleepCalls.push(ms);
+    };
+
+    const result = await withRetry(async () => 42, {
+      maxRetries: 2,
+      baseDelayMs: 100,
+      sleep: stubSleep,
+    });
+    expect(result).toBe(42);
+    expect(sleepCalls).toHaveLength(0);
+  });
+
+  test("retries a retryable error then succeeds, sleeping with growing delays", async () => {
+    const sleepCalls: number[] = [];
+    const stubSleep = async (ms: number) => {
+      sleepCalls.push(ms);
+    };
+
+    let attempts = 0;
+    const result = await withRetry(
+      async () => {
+        attempts++;
+        if (attempts < 3) {
+          // 502 → UPSTREAM_FAILURE → retryable
+          throw Object.assign(new Error("server error"), { status: 502 });
+        }
+        return "ok";
+      },
+      { maxRetries: 3, baseDelayMs: 100, sleep: stubSleep },
+    );
+
+    expect(result).toBe("ok");
+    expect(attempts).toBe(3);
+    // attempt 0 → delay 100*2^0=100; attempt 1 → delay 100*2^1=200
+    expect(sleepCalls).toEqual([100, 200]);
+  });
+
+  test("gives up after maxRetries and rethrows last error", async () => {
+    const stubSleep = async (_ms: number) => {};
+
+    let attempts = 0;
+    await expect(
+      withRetry(
+        async () => {
+          attempts++;
+          throw Object.assign(new Error("always fails"), { status: 503 });
+        },
+        { maxRetries: 2, baseDelayMs: 50, sleep: stubSleep },
+      ),
+    ).rejects.toThrow("always fails");
+
+    // invoked 1 (initial) + 2 (retries) = 3 times
+    expect(attempts).toBe(3);
+  });
+
+  test("does NOT retry a non-retryable error (404)", async () => {
+    const stubSleep = async (_ms: number) => {};
+
+    let attempts = 0;
+    await expect(
+      withRetry(
+        async () => {
+          attempts++;
+          throw Object.assign(new Error("not found"), { status: 404 });
+        },
+        { maxRetries: 3, baseDelayMs: 50, sleep: stubSleep },
+      ),
+    ).rejects.toThrow("not found");
+
+    // Should only attempt once — non-retryable errors rethrow immediately
+    expect(attempts).toBe(1);
+  });
+
+  test("maxRetries=0 means no retries on retryable error", async () => {
+    const stubSleep = async (_ms: number) => {};
+
+    let attempts = 0;
+    await expect(
+      withRetry(
+        async () => {
+          attempts++;
+          throw Object.assign(new Error("boom"), { status: 502 });
+        },
+        { maxRetries: 0, baseDelayMs: 50, sleep: stubSleep },
+      ),
+    ).rejects.toThrow("boom");
+
+    expect(attempts).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// withTimeout
+// ---------------------------------------------------------------------------
+
+describe("withTimeout", () => {
+  test("resolves when promise settles before the deadline", async () => {
+    const result = await withTimeout(Promise.resolve("fast"), 5000, "test");
+    expect(result).toBe("fast");
+  });
+
+  test("rejects with a timeout message when promise is too slow", async () => {
+    const neverResolves = new Promise<string>(() => {});
+    await expect(withTimeout(neverResolves, 10, "slow-op")).rejects.toThrow(
+      "slow-op timed out after 10ms",
+    );
+  });
+
+  test("uses a default label when none is provided", async () => {
+    const neverResolves = new Promise<string>(() => {});
+    await expect(withTimeout(neverResolves, 5)).rejects.toThrow("timed out after 5ms");
+  });
+
+  test("timeout error classifies as UPSTREAM_FAILURE retryable", async () => {
+    const neverResolves = new Promise<string>(() => {});
+    let caught: unknown;
+    try {
+      await withTimeout(neverResolves, 5, "label");
+    } catch (err) {
+      caught = err;
+    }
+    const classified = classifyError(caught);
+    expect(classified.code).toBe("UPSTREAM_FAILURE");
+    expect(classified.retryable).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// asyncPoolSettled / parallelApiSettled
+// ---------------------------------------------------------------------------
+
+describe("asyncPoolSettled", () => {
+  test("returns fulfilled results for all successful items", async () => {
+    const results = await asyncPoolSettled([1, 2, 3], 2, async (n) => n * 10);
+    expect(results).toHaveLength(3);
+    for (const r of results) {
+      expect(r.status).toBe("fulfilled");
+    }
+    const values = results
+      .filter((r): r is PromiseFulfilledResult<number> => r.status === "fulfilled")
+      .map((r) => r.value)
+      .sort((a, b) => a - b);
+    expect(values).toEqual([10, 20, 30]);
+  });
+
+  test("returns mixed fulfilled and rejected without throwing", async () => {
+    const results = await asyncPoolSettled([1, 2, 3], 2, async (n) => {
+      if (n === 2) throw new Error("item 2 failed");
+      return n;
+    });
+
+    expect(results).toHaveLength(3);
+    const statuses = results.map((r) => r.status);
+    expect(statuses).toContain("fulfilled");
+    expect(statuses).toContain("rejected");
+
+    const rejectedResult = results.find((r) => r.status === "rejected") as
+      | PromiseRejectedResult
+      | undefined;
+    expect(rejectedResult?.reason?.message).toBe("item 2 failed");
+  });
+
+  test("all-rejecting items do not throw — returns all rejected", async () => {
+    const results = await asyncPoolSettled([1, 2, 3], 2, async () => {
+      throw new Error("always fails");
+    });
+    expect(results).toHaveLength(3);
+    for (const r of results) {
+      expect(r.status).toBe("rejected");
+    }
+  });
+
+  test("handles empty input", async () => {
+    const results = await asyncPoolSettled([], 2, async (n: number) => n);
+    expect(results).toEqual([]);
+  });
+});
+
+describe("parallelApiSettled", () => {
+  test("returns settled results using default concurrency", async () => {
+    const results = await parallelApiSettled([1, 2, 3], async (n) => n * 2);
+    const values = results
+      .filter((r): r is PromiseFulfilledResult<number> => r.status === "fulfilled")
+      .map((r) => r.value)
+      .sort((a, b) => a - b);
+    expect(values).toEqual([2, 4, 6]);
+  });
+
+  test("does not throw when some items reject", async () => {
+    const results = await parallelApiSettled([1, 2, 3], async (n) => {
+      if (n === 1) throw new Error("first failed");
+      return n;
+    });
+    expect(results).toHaveLength(3);
+    expect(results.some((r) => r.status === "rejected")).toBe(true);
+    expect(results.some((r) => r.status === "fulfilled")).toBe(true);
   });
 });
