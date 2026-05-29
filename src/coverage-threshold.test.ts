@@ -37,11 +37,14 @@ describe("assertCoverageThreshold", () => {
     const fixture = [
       "All files                           |   91.05 |   80.00 |",
       " src/server/actions-runs-filter-tool.ts |  100.00 |  100.00 |",
+      " src/server/branch-protection-tool.ts   |  100.00 |  100.00 |",
       " src/server/changelog-draft-tool.ts     |  100.00 |  100.00 |",
       " src/server/check-run-create-tool.ts    |  100.00 |  100.00 |",
       " src/server/ci-diagnosis-tool.ts        |  100.00 |  100.00 |",
+      " src/server/deployment-status-tool.ts   |  100.00 |  100.00 |",
       " src/server/ecosystem-activity-tool.ts  |  100.00 |  100.00 |",
       " src/server/gh-auth-status-tool.ts      |  100.00 |  100.00 |",
+      " src/server/issue-dedup-tool.ts         |  100.00 |  100.00 |",
       " src/server/issue-from-template-tool.ts |  100.00 |  100.00 |",
       " src/server/labels-sync-tool.ts         |  100.00 |  100.00 |",
       " src/server/module-pin-hint-tool.ts     |  100.00 |  100.00 |",
@@ -51,9 +54,11 @@ describe("assertCoverageThreshold", () => {
       " src/server/pr-comment-batch-tool.ts    |  100.00 |  100.00 |",
       " src/server/pr-create-tool.ts           |  100.00 |  100.00 |",
       " src/server/pr-preflight-tool.ts        |  100.00 |  100.00 |",
+      " src/server/pr-review-thread-tool.ts    |  100.00 |  100.00 |",
       " src/server/release-create-tool.ts      |  100.00 |  100.00 |",
       " src/server/release-readiness-tool.ts   |  100.00 |  100.00 |",
       " src/server/repo-status-tool.ts         |  100.00 |  100.00 |",
+      " src/server/security-alerts-tool.ts     |  100.00 |  100.00 |",
       " src/server/workflow-dispatch-tool.ts   |  100.00 |  100.00 |",
     ].join("\n");
 

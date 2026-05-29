@@ -9,11 +9,14 @@ const DEFAULT_MIN_LINE_COVERAGE = 80;
  */
 export const REGISTERED_TOOL_FILES = [
   "actions-runs-filter-tool",
+  "branch-protection-tool",
   "changelog-draft-tool",
   "check-run-create-tool",
   "ci-diagnosis-tool",
+  "deployment-status-tool",
   "ecosystem-activity-tool",
   "gh-auth-status-tool",
+  "issue-dedup-tool",
   "issue-from-template-tool",
   "labels-sync-tool",
   "module-pin-hint-tool",
@@ -23,9 +26,11 @@ export const REGISTERED_TOOL_FILES = [
   "pr-comment-batch-tool",
   "pr-create-tool",
   "pr-preflight-tool",
+  "pr-review-thread-tool",
   "release-create-tool",
   "release-readiness-tool",
   "repo-status-tool",
+  "security-alerts-tool",
   "workflow-dispatch-tool",
 ] as const;
 

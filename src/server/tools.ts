@@ -1,11 +1,14 @@
 import type { FastMCP } from "fastmcp";
 
 import { registerActionsRunsFilterTool } from "./actions-runs-filter-tool.js";
+import { registerBranchProtectionTool } from "./branch-protection-tool.js";
 import { registerChangelogDraftTool } from "./changelog-draft-tool.js";
 import { registerCheckRunCreateTool } from "./check-run-create-tool.js";
 import { registerCiDiagnosisTool } from "./ci-diagnosis-tool.js";
+import { registerDeploymentStatusTool } from "./deployment-status-tool.js";
 import { registerEcosystemActivityTool } from "./ecosystem-activity-tool.js";
 import { registerGhAuthStatusTool } from "./gh-auth-status-tool.js";
+import { registerIssueDedupTool } from "./issue-dedup-tool.js";
 import { registerIssueFromTemplateTool } from "./issue-from-template-tool.js";
 import { registerLabelsSyncTool } from "./labels-sync-tool.js";
 import { registerModulePinHintTool } from "./module-pin-hint-tool.js";
@@ -15,9 +18,11 @@ import { registerPinDriftTool } from "./pin-drift-tool.js";
 import { registerPrCommentBatchTool } from "./pr-comment-batch-tool.js";
 import { registerPrCreateTool } from "./pr-create-tool.js";
 import { registerPrPreflightTool } from "./pr-preflight-tool.js";
+import { registerPrReviewThreadTool } from "./pr-review-thread-tool.js";
 import { registerReleaseCreateTool } from "./release-create-tool.js";
 import { registerReleaseReadinessTool } from "./release-readiness-tool.js";
 import { registerRepoStatusTool } from "./repo-status-tool.js";
+import { registerSecurityAlertsTool } from "./security-alerts-tool.js";
 import { registerWorkflowDispatchTool } from "./workflow-dispatch-tool.js";
 
 export function registerRethunkGitHubTools(server: FastMCP): void {
@@ -40,4 +45,9 @@ export function registerRethunkGitHubTools(server: FastMCP): void {
   registerActionsRunsFilterTool(server);
   registerLabelsSyncTool(server);
   registerCheckRunCreateTool(server);
+  registerSecurityAlertsTool(server);
+  registerPrReviewThreadTool(server);
+  registerBranchProtectionTool(server);
+  registerDeploymentStatusTool(server);
+  registerIssueDedupTool(server);
 }
