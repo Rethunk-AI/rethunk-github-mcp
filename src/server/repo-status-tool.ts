@@ -97,6 +97,73 @@ function getLocalGitState(localPath: string): RepoResult["local"] | undefined {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Compact output helpers
+// ---------------------------------------------------------------------------
+
+export interface CompactRepoEntry {
+  repo: string;
+  openPRs: number;
+  failingChecks: number;
+  behindBy?: number;
+  hasAlerts: boolean;
+}
+
+export interface CompactRepoStatusResult {
+  totals: {
+    repos: number;
+    openPRs: number;
+    failingChecks: number;
+    errors: number;
+  };
+  repos: CompactRepoEntry[];
+}
+
+export function buildCompactRepoStatus(results: RepoResult[]): CompactRepoStatusResult {
+  const entries: CompactRepoEntry[] = results
+    .filter((r) => !r.error)
+    .map((r) => {
+      const failingChecks = r.ci?.failedChecks?.length ?? (r.ci?.status === "failure" ? 1 : 0);
+      const entry: CompactRepoEntry = {
+        repo: `${r.owner}/${r.repo}`,
+        openPRs: r.openPRs ?? 0,
+        failingChecks,
+        hasAlerts: failingChecks > 0 || (r.openPRs ?? 0) > 0,
+      };
+      if (r.local?.behind) entry.behindBy = r.local.behind;
+      return entry;
+    });
+
+  return {
+    totals: {
+      repos: results.length,
+      openPRs: entries.reduce((n, e) => n + e.openPRs, 0),
+      failingChecks: entries.reduce((n, e) => n + e.failingChecks, 0),
+      errors: results.filter((r) => r.error).length,
+    },
+    repos: entries,
+  };
+}
+
+export function formatCompactRepoStatusMarkdown(results: RepoResult[]): string {
+  const compact = buildCompactRepoStatus(results);
+  const lines: string[] = [];
+  lines.push(
+    `**${compact.totals.repos} repos** · ${compact.totals.openPRs} open PRs · ${compact.totals.failingChecks} failing checks`,
+  );
+  for (const e of compact.repos) {
+    const parts: string[] = [`\`${e.repo}\``];
+    parts.push(`PRs: ${e.openPRs}`);
+    if (e.failingChecks > 0) parts.push(`CI: ${e.failingChecks} failing`);
+    if (e.behindBy !== undefined) parts.push(`behind: ${e.behindBy}`);
+    lines.push(`- ${parts.join(" · ")}`);
+  }
+  for (const r of results.filter((r) => r.error)) {
+    lines.push(`- \`${r.owner}/${r.repo}\` Error (${r.error?.code})`);
+  }
+  return lines.join("\n");
+}
+
 export function formatRepoStatusMarkdown(results: RepoResult[]): string {
   return results
     .map((r) => {
@@ -181,6 +248,13 @@ export function registerRepoStatusTool(server: FastMCP): void {
         .optional()
         .describe("Repos to query."),
       format: FormatSchema,
+      compact: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "If true, return a condensed summary (counts + top highlights) instead of full per-repo detail.",
+        ),
     }),
     execute: async (args) => {
       const auth = gateAuth();
@@ -265,6 +339,11 @@ export function registerRepoStatusTool(server: FastMCP): void {
           return { owner, repo, error: classifyError(err) };
         }
       });
+
+      if (args.compact) {
+        if (args.format === "json") return jsonRespond(buildCompactRepoStatus(results));
+        return formatCompactRepoStatusMarkdown(results);
+      }
 
       if (args.format === "json") return jsonRespond({ repos: results });
 

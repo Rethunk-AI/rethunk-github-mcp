@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { formatRepoStatusMarkdown, registerRepoStatusTool } from "./repo-status-tool.js";
+import {
+  buildCompactRepoStatus,
+  formatCompactRepoStatusMarkdown,
+  formatRepoStatusMarkdown,
+  registerRepoStatusTool,
+} from "./repo-status-tool.js";
 import { MAX_REPOS_PER_REQUEST } from "./schemas.js";
 import { captureTool } from "./test-harness.js";
 import { timeAgo } from "./utils.js";
@@ -92,6 +97,86 @@ describe("formatRepoStatusMarkdown", () => {
     expect(text).toContain("Error (NOT_FOUND): Repository not found.");
     expect(text).toContain("## Rethunk-AI/no-ci (?)");
     expect(text).toContain("CI: not configured");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// compact output helpers (no API calls)
+// ---------------------------------------------------------------------------
+
+describe("buildCompactRepoStatus / formatCompactRepoStatusMarkdown", () => {
+  const sampleResults = [
+    {
+      owner: "Rethunk-AI",
+      repo: "alpha",
+      openPRs: 3,
+      draftPRs: 1,
+      openIssues: 2,
+      ci: { status: "failure", failedChecks: [{ name: "lint", conclusion: "FAILURE" }] },
+      local: { branch: "main", dirty: 0, ahead: 0, behind: 2 },
+    },
+    {
+      owner: "Rethunk-AI",
+      repo: "beta",
+      openPRs: 0,
+      openIssues: 0,
+      ci: { status: "success" },
+    },
+    {
+      owner: "Rethunk-AI",
+      repo: "missing",
+      error: { code: "NOT_FOUND" as const, message: "not found", retryable: false },
+    },
+  ];
+
+  test("compact JSON: condensed shape, lacks verbose arrays, totals correct", () => {
+    const compact = buildCompactRepoStatus(sampleResults);
+
+    // totals
+    expect(compact.totals.repos).toBe(3);
+    expect(compact.totals.errors).toBe(1);
+    expect(compact.totals.openPRs).toBe(3); // only non-error repos
+    expect(compact.totals.failingChecks).toBe(1);
+
+    // per-repo entries exclude error repos
+    expect(compact.repos).toHaveLength(2);
+    const alpha = compact.repos[0];
+    if (!alpha) throw new Error("Expected alpha entry");
+    expect(alpha.repo).toBe("Rethunk-AI/alpha");
+    expect(alpha.failingChecks).toBe(1);
+    expect(alpha.behindBy).toBe(2);
+    expect(alpha.hasAlerts).toBe(true);
+
+    // no verbose failedChecks arrays or latestCommit objects
+    expect("failedChecks" in alpha).toBe(false);
+    expect("latestCommit" in alpha).toBe(false);
+
+    // compact JSON string is smaller than the full JSON
+    const fullJson = JSON.stringify({ repos: sampleResults });
+    const compactJson = JSON.stringify(compact);
+    expect(compactJson.length).toBeLessThan(fullJson.length);
+  });
+
+  test("compact markdown: short bullet list, no commit detail lines", () => {
+    const md = formatCompactRepoStatusMarkdown(sampleResults);
+    expect(md).toContain("Rethunk-AI/alpha");
+    expect(md).toContain("CI: 1 failing");
+    expect(md).toContain("behind: 2");
+    // error repo appears as error line
+    expect(md).toContain("Error (NOT_FOUND)");
+    // no commit SHA lines
+    expect(md).not.toContain("Latest:");
+    // no full table headers from formatRepoStatusMarkdown
+    expect(md).not.toContain("##");
+  });
+
+  test("default formatRepoStatusMarkdown output unchanged (full detail)", () => {
+    const first = sampleResults[0];
+    if (!first) throw new Error("Expected sampleResults[0]");
+    const md = formatRepoStatusMarkdown([first]);
+    expect(md).toContain("## Rethunk-AI/alpha");
+    expect(md).toContain("CI: failing: lint");
+    expect(md).toContain("[Local: main, 0 dirty, 0 ahead / 2 behind]");
   });
 });
 

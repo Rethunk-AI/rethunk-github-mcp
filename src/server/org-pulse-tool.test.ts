@@ -134,4 +134,39 @@ describe("org_pulse tool (mocked)", () => {
     expect(text).toContain("## Needs Attention");
     expect(text).toContain("Acme/svc");
   });
+
+  test("compact mode: JSON has totals+topActive, lacks attention/stalePRs arrays", async () => {
+    const spy = spyOn(githubClient, "graphqlQuery").mockResolvedValue(
+      makeOrgPulseResponse() as never,
+    );
+    const run = captureTool(registerOrgPulseTool);
+    const fullText = await run({ org: "Acme", staleDays: 1, format: "json" });
+    const compactText = await run({ org: "Acme", staleDays: 1, format: "json", compact: true });
+    spy.mockRestore();
+
+    const full = JSON.parse(fullText) as { attention: unknown[]; summary: object };
+    const compact = JSON.parse(compactText) as {
+      totals: {
+        scannedRepos: number;
+        failingCI: number;
+        stalePRs: number;
+        unreviewedPRs: number;
+        totalOpenPRs: number;
+        totalOpenIssues: number;
+      };
+      topActive: Array<{ repo: string; openPRs: number; ci: string }>;
+    };
+
+    // compact is materially smaller
+    expect(compactText.length).toBeLessThan(fullText.length);
+    // compact has totals and topActive
+    expect(compact.totals.scannedRepos).toBe(1);
+    expect(compact.totals.stalePRs).toBeGreaterThan(0);
+    expect(compact.topActive).toHaveLength(1);
+    expect(compact.topActive[0]?.repo).toBe("Acme/svc");
+    // compact lacks the verbose per-repo stalePRs/unreviewedPRs arrays
+    expect("attention" in compact).toBe(false);
+    // full still has attention array (default path unchanged)
+    expect(full.attention).toHaveLength(1);
+  });
 });

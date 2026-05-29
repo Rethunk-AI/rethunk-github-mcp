@@ -132,6 +132,82 @@ function urgencyScore(item: RepoAttentionItem): number {
 }
 
 // ---------------------------------------------------------------------------
+// Compact output helpers
+// ---------------------------------------------------------------------------
+
+const COMPACT_TOP_N = 5;
+
+export interface CompactActiveRepo {
+  repo: string;
+  openPRs: number;
+  openIssues: number;
+  ci: string;
+}
+
+export interface CompactOrgPulseResult {
+  org: string;
+  totals: {
+    scannedRepos: number;
+    failingCI: number;
+    stalePRs: number;
+    unreviewedPRs: number;
+    totalOpenPRs: number;
+    totalOpenIssues: number;
+  };
+  topActive: CompactActiveRepo[];
+}
+
+export function buildCompactOrgPulse(
+  org: string,
+  allRepos: RepoNode[],
+  attentionItems: RepoAttentionItem[],
+  summary: {
+    failingCI: number;
+    stalePRs: number;
+    unreviewedPRs: number;
+    totalOpenPRs: number;
+    totalOpenIssues: number;
+  },
+): CompactOrgPulseResult {
+  const topActive: CompactActiveRepo[] = attentionItems.slice(0, COMPACT_TOP_N).map((item) => ({
+    repo: item.repo,
+    openPRs: item.openPRs,
+    openIssues: item.openIssues,
+    ci: item.ci,
+  }));
+
+  return {
+    org,
+    totals: {
+      scannedRepos: allRepos.length,
+      failingCI: summary.failingCI,
+      stalePRs: summary.stalePRs,
+      unreviewedPRs: summary.unreviewedPRs,
+      totalOpenPRs: summary.totalOpenPRs,
+      totalOpenIssues: summary.totalOpenIssues,
+    },
+    topActive,
+  };
+}
+
+export function formatCompactOrgPulseMarkdown(compact: CompactOrgPulseResult): string {
+  const { totals, topActive } = compact;
+  const lines: string[] = [];
+  lines.push(`**${compact.org}** — ${totals.scannedRepos} repos scanned`);
+  lines.push(
+    `${totals.failingCI} failing CI · ${totals.stalePRs} stale PRs · ${totals.unreviewedPRs} unreviewed PRs · ${totals.totalOpenPRs} open PRs · ${totals.totalOpenIssues} open issues`,
+  );
+  if (topActive.length > 0) {
+    lines.push("Top active:");
+    for (const r of topActive) {
+      const ciLabel = r.ci === "failure" ? "CI:fail" : r.ci === "success" ? "CI:ok" : `CI:${r.ci}`;
+      lines.push(`- \`${r.repo}\` ${ciLabel} · PRs: ${r.openPRs} · Issues: ${r.openIssues}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Tool registration
 // ---------------------------------------------------------------------------
 
@@ -160,6 +236,13 @@ export function registerOrgPulseTool(server: FastMCP): void {
         .describe("Days without activity before a PR is considered stale."),
       includeArchived: z.boolean().optional().default(false).describe("Include archived repos."),
       format: FormatSchema,
+      compact: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "If true, return a condensed summary (counts + top highlights) instead of full per-repo detail.",
+        ),
     }),
     execute: async (args) => {
       const auth = gateAuth();
@@ -255,6 +338,12 @@ export function registerOrgPulseTool(server: FastMCP): void {
         totalOpenPRs,
         totalOpenIssues,
       };
+
+      if (args.compact) {
+        const compactResult = buildCompactOrgPulse(args.org, allRepos, attentionItems, summary);
+        if (args.format === "json") return jsonRespond(compactResult);
+        return formatCompactOrgPulseMarkdown(compactResult);
+      }
 
       if (args.format === "json") {
         return jsonRespond({
