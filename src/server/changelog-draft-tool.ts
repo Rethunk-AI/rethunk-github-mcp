@@ -128,6 +128,11 @@ export function registerChangelogDraftTool(server: FastMCP): void {
         });
 
         const rawCommits = cmp.data.commits.slice(0, maxCommits);
+        // total_commits reflects the true count ahead; the compare endpoint caps
+        // returned commits at 250, and maxCommits may further truncate.
+        const totalCommits: number =
+          (cmp.data as { total_commits?: number }).total_commits ?? cmp.data.commits.length;
+        const rawTruncatedCount = totalCommits - rawCommits.length;
         const allPRNumbers = new Set<number>();
         for (const c of rawCommits) {
           for (const n of extractPRNumbers(c.commit.message)) allPRNumbers.add(n);
@@ -158,7 +163,14 @@ export function registerChangelogDraftTool(server: FastMCP): void {
         });
 
         if (args.format === "json") {
-          return jsonRespond({ version: versionLabel, date: today, base, head, entries });
+          return jsonRespond({
+            version: versionLabel,
+            date: today,
+            base,
+            head,
+            entries,
+            ...(rawTruncatedCount > 0 ? { truncatedCount: rawTruncatedCount } : {}),
+          });
         }
 
         // Markdown output — CHANGELOG.md Keep-a-Changelog style

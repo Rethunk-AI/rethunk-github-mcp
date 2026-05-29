@@ -32,9 +32,13 @@ afterEach(() => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeCompareResponse(commits: Array<{ sha: string; message: string; prNumber?: number }>) {
+function makeCompareResponse(
+  commits: Array<{ sha: string; message: string; prNumber?: number }>,
+  totalCommitsOverride?: number,
+) {
   return {
     data: {
+      total_commits: totalCommitsOverride ?? commits.length,
       commits: commits.map((c) => ({
         sha: c.sha,
         commit: {
@@ -153,6 +157,106 @@ describe("changelog_draft tool (mocked)", () => {
     expect(parsed.head).toBe("main");
     expect(parsed.entries).toHaveLength(1);
     expect(parsed.entries[0]?.pr?.labels).toContain("chore");
+  });
+
+  test("empty commits: no entries in JSON output, no truncatedCount", async () => {
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      repos: {
+        get: async () => ({ data: { default_branch: "main" } }),
+        compareCommitsWithBasehead: async () => makeCompareResponse([]),
+      },
+    } as never);
+
+    const graphqlSpy = spyOn(githubClient, "graphqlQuery").mockResolvedValue({
+      repository: {},
+    } as never);
+
+    const run = captureTool(registerChangelogDraftTool);
+    const text = await run({
+      owner: "Acme",
+      repo: "svc",
+      base: "v1.0.0",
+      head: "main",
+      format: "json",
+    });
+
+    octokitSpy.mockRestore();
+    graphqlSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as { entries: unknown[]; truncatedCount?: number };
+    expect(parsed.entries).toHaveLength(0);
+    expect(parsed.truncatedCount).toBeUndefined();
+  });
+
+  test("truncatedCount emitted when total_commits exceeds maxCommits", async () => {
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      repos: {
+        get: async () => ({ data: { default_branch: "main" } }),
+        compareCommitsWithBasehead: async () =>
+          // Return 2 commits but signal total_commits = 10
+          makeCompareResponse(
+            [
+              { sha: "a".repeat(40), message: "fix a", prNumber: 1 },
+              { sha: "b".repeat(40), message: "fix b", prNumber: 2 },
+            ],
+            10,
+          ),
+      },
+    } as never);
+
+    const graphqlSpy = spyOn(githubClient, "graphqlQuery").mockResolvedValue(
+      makePRMetadataResponse([
+        { number: 1, title: "Fix A", labels: ["fix"] },
+        { number: 2, title: "Fix B", labels: ["fix"] },
+      ]) as never,
+    );
+
+    const run = captureTool(registerChangelogDraftTool);
+    const text = await run({
+      owner: "Acme",
+      repo: "svc",
+      base: "v1.0.0",
+      head: "main",
+      maxCommits: 2,
+      format: "json",
+    });
+
+    octokitSpy.mockRestore();
+    graphqlSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as {
+      entries: unknown[];
+      truncatedCount?: number;
+    };
+    expect(parsed.entries).toHaveLength(2);
+    // total_commits(10) - returned(2) = 8
+    expect(parsed.truncatedCount).toBe(8);
+  });
+
+  test("compareCommitsWithBasehead throws → error envelope", async () => {
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      repos: {
+        get: async () => ({ data: { default_branch: "main" } }),
+        compareCommitsWithBasehead: async () => {
+          const err = Object.assign(new Error("Not Found"), { status: 404 });
+          throw err;
+        },
+      },
+    } as never);
+
+    const run = captureTool(registerChangelogDraftTool);
+    const text = await run({
+      owner: "Acme",
+      repo: "svc",
+      base: "v1.0.0",
+      head: "main",
+      format: "json",
+    });
+
+    octokitSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as { error: { code: string } };
+    expect(parsed.error.code).toBe("NOT_FOUND");
   });
 
   test("Other label appears last in markdown output", async () => {

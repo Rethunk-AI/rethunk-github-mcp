@@ -52,6 +52,7 @@ interface RepoCommitResult {
   owner: string;
   repo: string;
   commitCount: number;
+  truncatedCount?: number;
   error?: McpErrorEnvelope;
   commits: EcosystemCommit[];
 }
@@ -130,26 +131,27 @@ async function fetchRepoCommits(
     (a, b) => new Date(b.committedDate).getTime() - new Date(a.committedDate).getTime(),
   );
 
-  const commits: EcosystemCommit[] = sorted
-    .filter((n) => !grepRe || grepRe.test(n.messageHeadline))
-    .slice(0, maxCommits)
-    .map((n) => {
-      const prNum = extractFirstPR(n.messageHeadline);
-      return {
-        owner,
-        repo,
-        sha7: sha7(n.oid),
-        message: n.messageHeadline,
-        author: n.author.user?.login ?? n.author.name ?? "unknown",
-        date: n.committedDate,
-        pr: prNum !== undefined ? { number: prNum } : null,
-      };
-    });
+  const filtered = sorted.filter((n) => !grepRe || grepRe.test(n.messageHeadline));
+  const rawTruncatedCount = filtered.length - maxCommits;
+
+  const commits: EcosystemCommit[] = filtered.slice(0, maxCommits).map((n) => {
+    const prNum = extractFirstPR(n.messageHeadline);
+    return {
+      owner,
+      repo,
+      sha7: sha7(n.oid),
+      message: n.messageHeadline,
+      author: n.author.user?.login ?? n.author.name ?? "unknown",
+      date: n.committedDate,
+      pr: prNum !== undefined ? { number: prNum } : null,
+    };
+  });
 
   return {
     owner,
     repo,
     commitCount: commits.length,
+    ...(rawTruncatedCount > 0 ? { truncatedCount: rawTruncatedCount } : {}),
     commits,
   };
 }
@@ -246,6 +248,7 @@ export function registerEcosystemActivityTool(server: FastMCP): void {
         owner: r.owner,
         repo: r.repo,
         commitCount: r.commitCount,
+        ...(r.truncatedCount !== undefined ? { truncatedCount: r.truncatedCount } : {}),
         ...(r.error ? { error: r.error } : {}),
       }));
 

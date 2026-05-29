@@ -1,7 +1,32 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { registerActionsRunsFilterTool } from "./actions-runs-filter-tool.js";
+import { resetAuthCache } from "./github-auth.js";
+import * as githubClient from "./github-client.js";
 import { captureTool } from "./test-harness.js";
+
+const ORIGINAL_GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const ORIGINAL_GH_TOKEN = process.env.GH_TOKEN;
+
+beforeEach(() => {
+  process.env.GITHUB_TOKEN = "test-token";
+  delete process.env.GH_TOKEN;
+  resetAuthCache();
+});
+
+afterEach(() => {
+  if (ORIGINAL_GITHUB_TOKEN === undefined) {
+    delete process.env.GITHUB_TOKEN;
+  } else {
+    process.env.GITHUB_TOKEN = ORIGINAL_GITHUB_TOKEN;
+  }
+  if (ORIGINAL_GH_TOKEN === undefined) {
+    delete process.env.GH_TOKEN;
+  } else {
+    process.env.GH_TOKEN = ORIGINAL_GH_TOKEN;
+  }
+  resetAuthCache();
+});
 
 describe("actions_runs_filter tool", () => {
   const run = captureTool(registerActionsRunsFilterTool);
@@ -110,5 +135,124 @@ describe("actions_runs_filter tool", () => {
     if (!parsed.error && parsed.runs) {
       expect(Array.isArray(parsed.runs)).toBe(true);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mocked tests — zero live network calls
+// ---------------------------------------------------------------------------
+
+/** Build a fake paginate.iterator that yields pages of runs. */
+function makePaginateIterator(pages: Array<{ total_count: number; workflow_runs: object[] }>) {
+  return async function* () {
+    for (const page of pages) {
+      yield { data: page };
+    }
+  };
+}
+
+describe("actions_runs_filter tool (mocked)", () => {
+  test("empty runs list: returns empty array, no truncatedCount", async () => {
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      actions: { listWorkflowRunsForRepo: {} },
+      paginate: {
+        iterator: () => makePaginateIterator([{ total_count: 0, workflow_runs: [] }])(),
+      },
+    } as never);
+
+    const run = captureTool(registerActionsRunsFilterTool);
+    const text = await run({ owner: "Acme", repo: "svc", limit: 10 });
+    octokitSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as { runs: unknown[]; truncatedCount?: number };
+    expect(parsed.runs).toHaveLength(0);
+    expect(parsed.truncatedCount).toBeUndefined();
+  });
+
+  test("truncatedCount present when total_count exceeds returned runs", async () => {
+    const makeRun = (id: number) => ({
+      id,
+      name: `run-${id}`,
+      status: "completed",
+      conclusion: "success",
+      head_branch: "main",
+      created_at: "2024-01-01T00:00:00Z",
+      html_url: `https://github.com/run/${id}`,
+    });
+
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      actions: { listWorkflowRunsForRepo: {} },
+      paginate: {
+        iterator: () =>
+          makePaginateIterator([
+            { total_count: 50, workflow_runs: [makeRun(1), makeRun(2), makeRun(3)] },
+          ])(),
+      },
+    } as never);
+
+    const run = captureTool(registerActionsRunsFilterTool);
+    const text = await run({ owner: "Acme", repo: "svc", limit: 3 });
+    octokitSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as { runs: unknown[]; truncatedCount?: number };
+    expect(parsed.runs).toHaveLength(3);
+    // total_count(50) - returned(3) = 47
+    expect(parsed.truncatedCount).toBe(47);
+  });
+
+  test("pagination: fetches across multiple pages up to limit", async () => {
+    const makeRun = (id: number) => ({
+      id,
+      name: `run-${id}`,
+      status: "completed",
+      conclusion: "success",
+      head_branch: "main",
+      created_at: "2024-01-01T00:00:00Z",
+      html_url: `https://github.com/run/${id}`,
+    });
+
+    const page1Runs = Array.from({ length: 3 }, (_, i) => makeRun(i + 1));
+    const page2Runs = Array.from({ length: 3 }, (_, i) => makeRun(i + 4));
+
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      actions: { listWorkflowRunsForRepo: {} },
+      paginate: {
+        iterator: () =>
+          makePaginateIterator([
+            { total_count: 10, workflow_runs: page1Runs },
+            { total_count: 10, workflow_runs: page2Runs },
+          ])(),
+      },
+    } as never);
+
+    const run = captureTool(registerActionsRunsFilterTool);
+    // limit=5 spans across 2 pages (3 from page1, 2 from page2)
+    const text = await run({ owner: "Acme", repo: "svc", limit: 5 });
+    octokitSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as { runs: Array<{ id: number }>; truncatedCount?: number };
+    expect(parsed.runs).toHaveLength(5);
+    expect(parsed.runs.map((r) => r.id)).toEqual([1, 2, 3, 4, 5]);
+    // total_count(10) - returned(5) = 5
+    expect(parsed.truncatedCount).toBe(5);
+  });
+
+  test("paginate.iterator throws → error envelope returned", async () => {
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      actions: { listWorkflowRunsForRepo: {} },
+      paginate: {
+        iterator: () => {
+          const err = Object.assign(new Error("Not Found"), { status: 404 });
+          throw err;
+        },
+      },
+    } as never);
+
+    const run = captureTool(registerActionsRunsFilterTool);
+    const text = await run({ owner: "Acme", repo: "svc", limit: 10 });
+    octokitSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as { error: { code: string } };
+    expect(parsed.error.code).toBe("NOT_FOUND");
   });
 });

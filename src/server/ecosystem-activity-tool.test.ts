@@ -189,6 +189,91 @@ describe("ecosystem_activity with mocked GraphQL", () => {
     expect(text).not.toContain("noise");
   });
 
+  test("truncatedCount emitted per-repo when filtered commits exceed maxCommitsPerRepo", async () => {
+    // 5 nodes returned by GraphQL, but maxCommitsPerRepo=2 → truncatedCount=3
+    const nodes = Array.from({ length: 5 }, (_, i) => ({
+      oid: `${"a".repeat(39)}${i}`,
+      messageHeadline: `commit ${i}`,
+      committedDate: `2024-02-0${i + 1}T00:00:00Z`,
+      author: { name: "dev", user: { login: "dev" } },
+    }));
+
+    const spy = spyOn(githubClient, "graphqlQuery").mockResolvedValue({
+      repository: {
+        defaultBranchRef: { target: { history: { nodes } } },
+      },
+    } as never);
+
+    const run = captureTool(registerEcosystemActivityTool);
+    const text = await run({
+      repos: [{ owner: "O", repo: "p" }],
+      since: "2020-01-01T00:00:00Z",
+      maxCommitsPerRepo: 2,
+      format: "json",
+    });
+    spy.mockRestore();
+
+    const parsed = JSON.parse(text) as {
+      repos: Array<{ truncatedCount?: number; commitCount: number }>;
+    };
+    expect(parsed.repos[0]?.commitCount).toBe(2);
+    expect(parsed.repos[0]?.truncatedCount).toBe(3);
+  });
+
+  test("truncatedCount absent when all commits fit within maxCommitsPerRepo", async () => {
+    const spy = spyOn(githubClient, "graphqlQuery").mockResolvedValue({
+      repository: {
+        defaultBranchRef: {
+          target: {
+            history: {
+              nodes: [
+                {
+                  oid: `${"b".repeat(39)}1`,
+                  messageHeadline: "only commit",
+                  committedDate: "2024-02-01T00:00:00Z",
+                  author: { name: "dev", user: { login: "dev" } },
+                },
+              ],
+            },
+          },
+        },
+      },
+    } as never);
+
+    const run = captureTool(registerEcosystemActivityTool);
+    const text = await run({
+      repos: [{ owner: "O", repo: "p" }],
+      since: "2020-01-01T00:00:00Z",
+      maxCommitsPerRepo: 50,
+      format: "json",
+    });
+    spy.mockRestore();
+
+    const parsed = JSON.parse(text) as {
+      repos: Array<{ truncatedCount?: number }>;
+    };
+    expect(parsed.repos[0]?.truncatedCount).toBeUndefined();
+  });
+
+  test("graphqlQuery rejects → repo error envelope in result", async () => {
+    const spy = spyOn(githubClient, "graphqlQuery").mockRejectedValue(
+      Object.assign(new Error("Not Found"), { status: 404 }),
+    );
+
+    const run = captureTool(registerEcosystemActivityTool);
+    const text = await run({
+      repos: [{ owner: "O", repo: "p" }],
+      since: "2020-01-01T00:00:00Z",
+      format: "json",
+    });
+    spy.mockRestore();
+
+    const parsed = JSON.parse(text) as {
+      repos: Array<{ error?: { code: string } }>;
+    };
+    expect(parsed.repos[0]?.error?.code).toBeDefined();
+  });
+
   test("dedupes commits when multiple paths return the same SHA", async () => {
     const node = {
       oid: `${"f".repeat(39)}a`,

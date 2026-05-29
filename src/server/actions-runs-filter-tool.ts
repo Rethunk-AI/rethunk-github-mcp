@@ -17,6 +17,7 @@ export interface WorkflowRun {
 
 export interface ActionsRunsFilterResult {
   runs: WorkflowRun[];
+  truncatedCount?: number;
 }
 
 export function registerActionsRunsFilterTool(server: FastMCP): void {
@@ -42,10 +43,10 @@ export function registerActionsRunsFilterTool(server: FastMCP): void {
         .number()
         .int()
         .min(1)
-        .max(100)
+        .max(500)
         .optional()
         .default(20)
-        .describe("Maximum number of runs to return (default 20)."),
+        .describe("Maximum number of runs to return (default 20, max 500)."),
       format: FormatSchema,
     }),
     execute: async (args) => {
@@ -56,34 +57,67 @@ export function registerActionsRunsFilterTool(server: FastMCP): void {
         const octokit = getOctokit();
         const { owner, repo, workflow, status, conclusion, branch, limit } = args;
 
-        // Prepare API call parameters with proper types
-        const apiParams: Parameters<typeof octokit.actions.listWorkflowRunsForRepo>[0] = {
+        // Prepare base API call parameters
+        type RunsApiParams = Parameters<typeof octokit.actions.listWorkflowRunsForRepo>[0];
+        const baseParams: RunsApiParams = {
           owner,
           repo,
-          per_page: Math.min(limit, 100),
+          per_page: 100,
         };
 
         // Add optional parameters with proper type casting
         if (status === "queued" || status === "in_progress" || status === "completed") {
-          apiParams.status = status;
+          baseParams.status = status;
         }
         if (conclusion === "success" || conclusion === "failure" || conclusion === "cancelled") {
-          apiParams.conclusion = conclusion;
+          baseParams.conclusion = conclusion;
         }
         if (branch) {
-          apiParams.head_branch = branch;
+          baseParams.head_branch = branch;
         }
 
-        // List workflow runs
-        const response = await octokit.actions.listWorkflowRunsForRepo(apiParams);
+        // Fetch runs via paginated iterator, capping total fetched at `limit`.
+        // We use the iterator form to capture total_count from the first page.
+        type RawRun = {
+          id: number;
+          name: string | null;
+          status: string | null;
+          conclusion: string | null;
+          head_branch: string | null;
+          created_at: string;
+          html_url: string;
+        };
+        let totalCount = 0;
+        const accumulated: RawRun[] = [];
 
-        // Filter by workflow name if provided
-        let runs = response.data.workflow_runs || [];
+        for await (const page of octokit.paginate.iterator(
+          octokit.actions.listWorkflowRunsForRepo,
+          baseParams,
+        )) {
+          const pageData = page.data as { total_count?: number; workflow_runs?: RawRun[] };
+          if (totalCount === 0) {
+            totalCount = pageData.total_count ?? 0;
+          }
+          for (const run of pageData.workflow_runs ?? []) {
+            accumulated.push(run as RawRun);
+            if (accumulated.length >= limit) break;
+          }
+          if (accumulated.length >= limit) break;
+        }
+
+        // Filter by workflow name if provided (client-side)
+        let runs: RawRun[] = accumulated;
         if (workflow) {
           runs = runs.filter((run) =>
             (run.name ?? "").toLowerCase().includes(workflow.toLowerCase()),
           );
         }
+
+        // Derive truncatedCount: total available minus what we're returning.
+        // Note: total_count is pre-filter (before client-side workflow name filter),
+        // so this is an approximation when `workflow` is set.
+        const returnedCount = Math.min(runs.length, limit);
+        const rawTruncatedCount = totalCount - returnedCount;
 
         // Map to output format and limit results
         const result: ActionsRunsFilterResult = {
@@ -96,6 +130,7 @@ export function registerActionsRunsFilterTool(server: FastMCP): void {
             createdAt: run.created_at ?? "",
             url: run.html_url ?? "",
           })),
+          ...(rawTruncatedCount > 0 ? { truncatedCount: rawTruncatedCount } : {}),
         };
 
         if (!args.format || args.format === "json") return jsonRespond(result);
