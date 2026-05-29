@@ -20,7 +20,7 @@ This package is an MCP **stdio** server. The client starts the process and commu
 
 ## Prerequisites
 
-- **GitHub token:** All tools except **`gh_auth_status`** require a GitHub personal access token. Set **`GITHUB_TOKEN`** or **`GH_TOKEN`** in the environment, or have **`gh`** CLI authenticated (`gh auth login`). Read-only rollups need repository read access and **`read:org`** for **`org_pulse`**; write-capable tools need equivalent write permission in the target repositories. See [mcp-tools.md](mcp-tools.md#authentication).
+- **GitHub token:** All tools except **`gh_auth_status`** require a GitHub personal access token. Set **`GITHUB_TOKEN`** or **`GH_TOKEN`** in the environment, or have **`gh`** CLI authenticated (`gh auth login`). Read-only rollups need repository read access, **`read:org`** for **`org_pulse`**, and **`security_events`** for **`security_alerts`**; write-capable tools need equivalent write permission in the target repositories (**`pr_review_thread_ops`** resolves/unresolves PR review threads). See [mcp-tools.md](mcp-tools.md#authentication).
 - **Node.js >= 22** if you use **`npx`**, or **Bun** if you use **`bunx`** / **`bun`** (see `package.json` `engines` / `packageManager`).
 
 ## GitHub Packages
@@ -76,11 +76,14 @@ Roots-capable clients let local-repo read tools (`repo_status`, `pr_preflight`, 
 
 | Variable | Default | Purpose |
 | ---------- | --------- | --------- |
-| **`GITHUB_TOKEN`** | (required) | GitHub personal access token. Required scopes: `repo`, `read:org` (for `org_pulse`). |
+| **`GITHUB_TOKEN`** | (required) | GitHub personal access token. Required scopes: `repo`, `read:org` (for `org_pulse`), and `security_events` (for `security_alerts` — Dependabot + code-scanning reads). |
 | **`GH_TOKEN`** | (fallback) | Alternative to `GITHUB_TOKEN` if using `gh` CLI authentication. |
 | **`GITHUB_API_URL`** | `https://api.github.com` | GitHub REST API base URL (for GitHub Enterprise). |
 | **`GITHUB_GRAPHQL_URL`** | (auto) | GitHub GraphQL endpoint (for GitHub Enterprise; defaults to REST API URL + `/graphql`). |
 | **`GITHUB_API_PARALLELISM`** | `4` | Concurrency limit for API calls. Lower if rate-limited; raise if on a fast connection. |
+| **`GITHUB_API_MAX_RETRIES`** | `2` | Retry attempts for retryable failures (429 / secondary rate limit / 5xx) when a tool opts into `withRetry`. |
+| **`GITHUB_API_RETRY_BASE_MS`** | `500` | Base delay for exponential backoff between retries. |
+| **`GITHUB_API_TIMEOUT_MS`** | `30000` | Default per-request timeout for the `withTimeout` helper. |
 
 ## Cursor
 

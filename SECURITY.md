@@ -26,6 +26,19 @@ When reporting a vulnerability, please include:
 - Token scopes should be limited to the minimum required operations.
 - Prefer separate tokens for read-only rollups vs. write-capable automation.
 
+**Scope requirements by tool category:**
+
+| Category | Minimum scope |
+| -------- | ------------- |
+| Basic read rollups (`repo_status`, `my_work`, etc.) | `repo` (read) |
+| `org_pulse` | `repo` + `read:org` |
+| `security_alerts` | `security_events` read (or `repo`) |
+| `branch_protection_status` | repository admin or `repo` |
+| `deployment_status` | `repo` (deployments read) |
+| `issue_dedup` | `repo` (issues read) |
+| `pr_review_thread_ops` (resolve/unresolve) | `repo` or `pull_requests:write` |
+| Write-capable tools (`pr_create`, `release_create`, etc.) | `repo` (full) |
+
 ### API Rate Limiting & Abuse Risk
 
 - **High:** MCP tools batch multiple API calls; rapid rate-limit exhaustion is possible.
@@ -42,7 +55,8 @@ When reporting a vulnerability, please include:
 
 ### Write-Capable Mutation Risk
 
-- **High:** Some tools create or mutate GitHub state: `pr_create`, `pr_comment_batch`, `issue_from_template`, `release_create`, `workflow_dispatch`, `labels_sync`, and `check_run_create`.
+- **High:** Some tools create or mutate GitHub state: `pr_create`, `pr_comment_batch`, `issue_from_template`, `release_create`, `workflow_dispatch`, `labels_sync`, `check_run_create`, and `pr_review_thread_ops`.
+- `pr_review_thread_ops` (resolve/unresolve) mutates PR review threads and requires PR write scope. `action=list` is read-only in effect.
 - Accidental or repeated calls can create duplicate PRs, issues, reviews, releases, workflow runs, or check runs.
 - Use least-privilege tokens and prefer test repositories for first-time validation.
 - Treat write-capable tokens as operational credentials with tighter blast-radius controls than read-only rollups.

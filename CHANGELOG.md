@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`security_alerts` tool** (read) — rolls up Dependabot and Code Scanning alerts by severity for a repository. Requires `security_events` scope (or `repo`). Returns `{ rollup, dependabot, codeScanning }` with per-source `enabled`, `total`, `truncatedCount`, and alert arrays. A 403/404 on either source reports `{ enabled: false, reason }` without aborting the other source.
+- **`pr_review_thread_ops` tool** (write) — list, resolve, or unresolve PR review threads. `action=list` returns compact thread metadata (capped at 100; `truncatedCount` present when more exist). `resolveOutdated=true` bulk-resolves all unresolved+outdated threads without specifying IDs. `dryRun=true` returns `{ dryRun: true, action, targetThreadIds }` without mutating. Requires PR write scope.
+- **`branch_protection_status` tool** (read) — returns branch protection rules for a branch (defaults to repo default). Reports `{ protected: false }` when the branch has no rules rather than an error. Requires branch-protection read.
+- **`deployment_status` tool** (read) — returns recent deployments with per-deployment state, creator, ref, and SHA, plus a `byEnvironment` map of latest state per environment name. Requires deployments read.
+- **`issue_dedup` tool** (read) — detects likely-duplicate issues using token-set Jaccard similarity on normalized titles. Returns matches above a configurable `threshold` (default 0.5), sorted by score, capped at 20 (excess in `truncatedCount`). Requires issues read.
+- **`dryRun`** parameter added to **`pr_create`**, **`pr_comment_batch`**, **`check_run_create`**, and **`issue_from_template`** — joins `labels_sync`, `release_create`, and `workflow_dispatch`. Each returns `{ dryRun: true, plan: { ... } }` with the resolved parameters that would have been used.
+- **`compact`** boolean parameter added to **`repo_status`** and **`org_pulse`** — returns a condensed summary (counts + top highlights) instead of full per-item detail.
+- **`truncatedCount`** field now emitted by **`actions_runs_filter`**, **`ecosystem_activity`**, and **`changelog_draft`** when results are capped by the `limit` parameter (matches existing `release_readiness` behaviour). `actions_runs_filter` also raises its `limit` maximum from 100 to 500 and now paginates across pages.
+- **`github-client` resilience helpers:** `withRetry` (exponential backoff; configurable via `GITHUB_API_MAX_RETRIES` env var, default 2, and `GITHUB_API_RETRY_BASE_MS`, default 500 ms); `withTimeout` (configurable via `GITHUB_API_TIMEOUT_MS`, default 30 000 ms; tagged `_isTimeout` so `classifyError` treats it as a retryable `UPSTREAM_FAILURE`); `asyncPoolSettled` / `parallelApiSettled` (partial-results pool that never aborts on per-item failure). `classifyError` also now classifies HTTP 429 and secondary-rate-limit `Retry-After` responses as `RATE_LIMITED`.
+
 ## [1.2.0] — 2026-05-22
 
 A correctness, security, and safety pass across the whole tool surface,

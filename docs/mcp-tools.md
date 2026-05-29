@@ -30,12 +30,19 @@ MCP clients expose tools as `{serverName}_{toolName}`. With the server registere
 | `actions_runs_filter` | `rethunk-github_actions_runs_filter` | read | List and filter GitHub Actions workflow runs. |
 | `labels_sync` | `rethunk-github_labels_sync` | write | Converge a repository's labels to a declared set. |
 | `check_run_create` | `rethunk-github_check_run_create` | write | Publish a synthetic GitHub check run against a commit SHA. |
+| `security_alerts` | `rethunk-github_security_alerts` | read | Roll up Dependabot and Code Scanning alerts by severity. Requires `security_events` scope (or `repo`). |
+| `pr_review_thread_ops` | `rethunk-github_pr_review_thread_ops` | write | List, resolve, or unresolve PR review threads. Requires PR write (`repo` / `pull_requests:write`). |
+| `branch_protection_status` | `rethunk-github_branch_protection_status` | read | Check branch protection rules for a repository branch. Requires branch-protection read (admin or `repo`). |
+| `deployment_status` | `rethunk-github_deployment_status` | read | Check deployment status and latest state per environment. Requires deployments read (`repo`). |
+| `issue_dedup` | `rethunk-github_issue_dedup` | read | Find likely-duplicate issues by title similarity before opening a new one. Requires issues read (`repo`). |
 
 ## Output and mutation model
 
 - Read-only rollup tools with `format` support default to **JSON** and accept `format: "markdown"` for human-readable output.
 - `gh_auth_status` is read-only and always returns compact JSON.
-- Write-capable tools always return compact JSON. `labels_sync`, `release_create`, and `workflow_dispatch` accept `dryRun` to compute and return the planned action without mutating GitHub state.
+- Write-capable tools always return compact JSON. `labels_sync`, `release_create`, `workflow_dispatch`, `pr_create`, `pr_comment_batch`, `check_run_create`, `issue_from_template`, and `pr_review_thread_ops` accept `dryRun` to compute and return the planned action without mutating GitHub state. `pr_create`, `pr_comment_batch`, `check_run_create`, and `issue_from_template` return `{ dryRun: true, plan: { ... } }` where `plan` contains the resolved parameters. `pr_review_thread_ops` returns `{ dryRun: true, action, targetThreadIds }`.
+- `repo_status` and `org_pulse` accept `compact: true` for a condensed summary (counts and top highlights) instead of full per-item detail.
+- `actions_runs_filter`, `ecosystem_activity`, and `changelog_draft` emit `truncatedCount` when results are capped by the `limit` parameter (matches `release_readiness` behaviour).
 
 ## Workspace root resolution
 
@@ -102,6 +109,7 @@ Agents can decide programmatically whether to retry (e.g. exponential backoff on
 | ------ | ------ | ---------- | --------- | ------------- |
 | `repos` | `(RepoRef \| LocalPath)[]` | no | active workspace root | 1–64 repos. Each is `{ owner, repo }` or `{ localPath }`. |
 | `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
+| `compact` | `boolean` | no | `false` | Return a condensed summary (counts + top highlights) instead of full per-repo detail. |
 
 **JSON output:**
 
@@ -296,6 +304,7 @@ Logs are **tail-truncated** (last N lines kept) since failure output is at the b
 | `staleDays` | `int` | no | `7` | Days without activity before a PR is stale. |
 | `includeArchived` | `boolean` | no | `false` | Include archived repositories. |
 | `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
+| `compact` | `boolean` | no | `false` | Return a condensed summary (counts + top highlights) instead of full per-repo detail. |
 
 **JSON output:**
 
@@ -418,7 +427,8 @@ The `attention` array is sorted by urgency: failing CI repos first, then by stal
   "summary": {
     "totalCommits": 47,
     "repoBreakdown": { "bastion-satcom": 12, "some-lib": 35 }
-  }
+  },
+  "truncatedCount": 5   // omitted when 0; commits beyond maxCommitsPerRepo that were not returned
 }
 ```
 
@@ -483,7 +493,8 @@ The pseudo-version is formatted as `v0.0.0-YYYYMMDDHHMMSS-<first12SHAchars>` usi
     "author": "alice",
     "date": "2026-04-20T10:00:00Z",
     "pr": { "number": 42, "title": "feat: add blockedOnMe lens", "labels": ["enhancement"] }
-  }]
+  }],
+  "truncatedCount": 3   // omitted when 0; commits beyond maxCommits that were not returned
 }
 ```
 
@@ -503,6 +514,7 @@ Commits are compared as `base...head`. PR metadata (title, labels) is resolved v
 | `body` | `string` | no | — | Overall review body text. |
 | `event` | `"COMMENT" \| "APPROVE" \| "REQUEST_CHANGES"` | no | `"COMMENT"` | Review event type. |
 | `comments` | `{ path, line, body }[]` | no | — | Inline comments relative to repository root. |
+| `dryRun` | `boolean` | no | `false` | Return the planned review without mutating. |
 
 `commentsRequested` reports the number of inline comments submitted in the request; GitHub's review-creation response does not echo the created comments, so this is the requested count, not a server-confirmed one.
 
@@ -510,6 +522,12 @@ Commits are compared as `base...head`. PR metadata (title, labels) is resolved v
 
 ```jsonc
 { "reviewId": 123456, "url": "https://github.com/org/repo/pull/42#pullrequestreview-123456", "state": "COMMENTED", "commentsRequested": 2 }
+```
+
+When `dryRun: true`:
+
+```jsonc
+{ "dryRun": true, "plan": { "owner": "org", "repo": "name", "prNumber": 42, "event": "COMMENT", "commentCount": 2, "comments": [{ "path": "src/foo.ts", "line": 10, "bodySnippet": "..." }] } }
 ```
 
 ---
@@ -528,11 +546,18 @@ Commits are compared as `base...head`. PR metadata (title, labels) is resolved v
 | `base` | `string` | yes | — | Target branch name. |
 | `draft` | `boolean` | no | `false` | Create the PR as a draft. |
 | `maintainerCanModify` | `boolean` | no | `true` | Allow maintainers to modify the PR branch. |
+| `dryRun` | `boolean` | no | `false` | Return the planned creation without mutating. |
 
 **JSON output:**
 
 ```jsonc
 { "number": 42, "url": "https://github.com/org/repo/pull/42", "state": "open", "draft": false }
+```
+
+When `dryRun: true`:
+
+```jsonc
+{ "dryRun": true, "plan": { "owner": "org", "repo": "name", "head": "feature/x", "base": "main", "title": "My PR", "draft": false, "bodyPreview": "..." } }
 ```
 
 ---
@@ -550,11 +575,18 @@ Commits are compared as `base...head`. PR metadata (title, labels) is resolved v
 | `title` | `string` | yes | — | Issue title. |
 | `assignees` | `string[]` | no | — | Assignee usernames. |
 | `labels` | `string[]` | no | — | Labels to apply. |
+| `dryRun` | `boolean` | no | `false` | Fetch and render the template (with variable substitution), then return the planned issue without mutating. |
 
 **JSON output:**
 
 ```jsonc
 { "number": 101, "url": "https://github.com/org/repo/issues/101", "title": "Investigate release drift" }
+```
+
+When `dryRun: true`:
+
+```jsonc
+{ "dryRun": true, "plan": { "owner": "org", "repo": "name", "title": "...", "bodyPreview": "...", "labels": ["bug"] } }
 ```
 
 Template matching tries exact filename first, then case-insensitive partial matching.
@@ -634,7 +666,7 @@ On missing or invalid auth, the tool returns `{ "authenticated": false }` instea
 | `status` | `"queued" \| "in_progress" \| "completed"` | no | — | Filter by run status. |
 | `conclusion` | `"success" \| "failure" \| "cancelled"` | no | — | Filter by run conclusion. |
 | `branch` | `string` | no | — | Filter by branch name. |
-| `limit` | `int` | no | `20` | Maximum number of runs to return, up to 100. |
+| `limit` | `int` | no | `20` | Maximum number of runs to return (1–500, default 20). |
 | `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
 **JSON output:**
@@ -649,7 +681,8 @@ On missing or invalid auth, the tool returns `{ "authenticated": false }` instea
     "branch": "main",
     "createdAt": "2026-05-01T10:00:00Z",
     "url": "https://github.com/org/repo/actions/runs/12345"
-  }]
+  }],
+  "truncatedCount": 12   // omitted when 0; total available minus returned
 }
 ```
 
@@ -698,6 +731,7 @@ The existing label set is fully paginated, so the `deleteExtra` "extra" computat
 | `conclusion` | `"success" \| "failure" \| "neutral" \| "cancelled" \| "skipped" \| "timed_out"` | no | — | Required when `status` is `"completed"`. |
 | `title` | `string` | no | — | Output title. |
 | `summary` | `string` | no | — | Output summary. |
+| `dryRun` | `boolean` | no | `false` | Return the planned check run without mutating. |
 
 **JSON output:**
 
@@ -705,7 +739,236 @@ The existing label set is fully paginated, so the `deleteExtra` "extra" computat
 { "id": 5555, "url": "https://github.com/org/repo/runs/5555" }
 ```
 
-If `status` is `"completed"` without a `conclusion`, the tool returns a `VALIDATION` error envelope.
+When `dryRun: true`:
+
+```jsonc
+{ "dryRun": true, "plan": { "owner": "org", "repo": "name", "name": "my-check", "headSha": "abc1234", "status": "completed", "conclusion": "success" } }
+```
+
+If `status` is `"completed"` without a `conclusion`, the tool returns a `VALIDATION` error envelope. The `dryRun` path applies the same validation before returning.
+
+---
+
+### `security_alerts`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `owner` | `string` | yes | — | GitHub owner or organization. |
+| `repo` | `string` | yes | — | GitHub repository name. |
+| `state` | `"open" \| "dismissed" \| "fixed" \| "auto_dismissed"` | no | `"open"` | Alert state to filter by. |
+| `severity` | `"critical" \| "high" \| "medium" \| "low"` | no | — | Filter to a specific severity. Omit to return all severities. |
+| `includeDependabot` | `boolean` | no | `true` | Include Dependabot alerts. |
+| `includeCodeScanning` | `boolean` | no | `true` | Include Code Scanning alerts. |
+| `limit` | `int` | no | `30` | Maximum alerts per source (1–100). |
+| `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
+
+**Requires:** `security_events` scope (or `repo`).
+
+**JSON output:**
+
+```jsonc
+{
+  "rollup": { "critical": 1, "high": 3, "medium": 5, "low": 2 },
+  "dependabot": {
+    "enabled": true,
+    "total": 4,
+    "truncatedCount": 0,
+    "alerts": [{
+      "number": 12,
+      "ghsaId": "GHSA-xxxx-xxxx-xxxx",
+      "severity": "high",
+      "state": "open",
+      "package": "lodash",
+      "summary": "Prototype pollution in lodash",
+      "htmlUrl": "https://github.com/org/repo/security/dependabot/12"
+    }]
+  },
+  "codeScanning": {
+    "enabled": true,
+    "total": 7,
+    "truncatedCount": 0,
+    "alerts": [{
+      "number": 3,
+      "ruleId": "js/code-injection",
+      "severity": "critical",
+      "state": "open",
+      "htmlUrl": "https://github.com/org/repo/security/code-scanning/3"
+    }]
+  }
+}
+```
+
+When a source is disabled or not accessible (HTTP 403/404), it reports `{ "enabled": false, "reason": "..." }` instead of an error, and the other source is still returned. `truncatedCount` on each source shows how many alerts matched but were not returned due to `limit`.
+
+**Idempotency:** read-only.
+
+---
+
+### `pr_review_thread_ops`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `owner` | `string` | yes | — | GitHub repository owner or organization. |
+| `repo` | `string` | yes | — | GitHub repository name. |
+| `prNumber` | `int` | yes | — | Pull request number. |
+| `action` | `"list" \| "resolve" \| "unresolve"` | yes | — | Operation to perform. |
+| `threadIds` | `string[]` | no | — | Review thread node IDs to resolve/unresolve. Required for resolve/unresolve unless `resolveOutdated` is true. |
+| `resolveOutdated` | `boolean` | no | `false` | When `action=resolve`: resolve all currently unresolved and outdated threads instead of specifying `threadIds`. |
+| `dryRun` | `boolean` | no | `false` | Compute the target thread set and return it without mutating. |
+
+**Requires:** PR write (`repo` or `pull_requests:write`). `action=list` is read-only in effect but still uses a write-capable token for the GraphQL endpoint.
+
+**JSON output — `action=list`:**
+
+```jsonc
+{
+  "threads": [{
+    "id": "PRRT_...",
+    "path": "src/foo.ts",
+    "line": 42,
+    "isResolved": false,
+    "isOutdated": true,
+    "author": "alice",
+    "bodySnippet": "Please use const here…"
+  }],
+  "truncatedCount": 5   // present when PR has more than 100 threads
+}
+```
+
+**JSON output — `action=resolve` or `action=unresolve`:**
+
+```jsonc
+{ "action": "resolve", "resolved": ["PRRT_aaa", "PRRT_bbb"], "failures": [] }
+```
+
+**JSON output — `dryRun=true`:**
+
+```jsonc
+{ "dryRun": true, "action": "resolve", "targetThreadIds": ["PRRT_aaa", "PRRT_bbb"] }
+```
+
+**Idempotency:** convergent — resolving an already-resolved thread is a no-op. `action=list` is read-only.
+
+---
+
+### `branch_protection_status`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `owner` | `string` | yes | — | GitHub owner or organization. |
+| `repo` | `string` | yes | — | GitHub repository name. |
+| `branch` | `string` | no | default branch | Branch name. Omit to query the repository default branch. |
+| `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
+
+**Requires:** branch-protection read (repository admin or `repo` scope).
+
+**JSON output:**
+
+```jsonc
+{
+  "branch": "main",
+  "protected": true,
+  "requiredStatusChecks": { "strict": true, "contexts": ["ci/test"] },
+  "requiredReviews": { "count": 1, "dismissStaleReviews": true, "requireCodeOwnerReviews": false },
+  "enforceAdmins": false,
+  "requiredLinearHistory": true,
+  "allowForcePushes": false,
+  "requiredSignatures": false,
+  "restrictions": null
+}
+```
+
+When the branch has no protection rules, returns `{ "branch": "main", "protected": false }`. The `restrictions` field is `null` (no restrictions) or `{ "users": [...], "teams": [...] }`.
+
+**Idempotency:** read-only.
+
+---
+
+### `deployment_status`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `owner` | `string` | yes | — | GitHub owner or organization. |
+| `repo` | `string` | yes | — | GitHub repository name. |
+| `environment` | `string` | no | — | Filter by environment name (e.g. `"production"`). |
+| `limit` | `int` | no | `10` | Maximum deployments to fetch (1–50). |
+| `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
+
+**Requires:** deployments read (`repo` scope).
+
+**JSON output:**
+
+```jsonc
+{
+  "environmentFilter": "production",
+  "deployments": [{
+    "id": 123456,
+    "environment": "production",
+    "ref": "main",
+    "sha": "abc1234",
+    "state": "success",
+    "creator": "alice",
+    "createdAt": "2026-05-20T10:00:00Z",
+    "updatedAt": "2026-05-20T10:05:00Z",
+    "url": "https://myapp.example.com"
+  }],
+  "byEnvironment": { "production": "success", "staging": "failure" },
+  "truncatedCount": 0
+}
+```
+
+`byEnvironment` maps each environment name to its latest deployment state (first-seen wins since the API returns newest-first). `truncatedCount` is always `0` in this version (reserved for future use).
+
+**Idempotency:** read-only.
+
+---
+
+### `issue_dedup`
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `owner` | `string` | yes | — | GitHub owner or organization. |
+| `repo` | `string` | yes | — | GitHub repository name. |
+| `title` | `string` | yes | — | The candidate issue title to check for duplicates. |
+| `labels` | `string[]` | no | — | Filter candidate issues by these labels (OR semantics). |
+| `state` | `"open" \| "closed" \| "all"` | no | `"open"` | Which issue states to scan. |
+| `limit` | `int` | no | `50` | Maximum existing issues to scan (1–100). |
+| `threshold` | `number` | no | `0.5` | Minimum similarity score (0–1) to include in results. |
+| `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
+
+**Requires:** issues read (`repo` scope).
+
+**JSON output:**
+
+```jsonc
+{
+  "candidateTitle": "Button click handler broken in Safari",
+  "scanned": 50,
+  "matches": [{
+    "number": 88,
+    "title": "Safari click handler regression",
+    "state": "open",
+    "url": "https://github.com/org/repo/issues/88",
+    "score": 0.67,
+    "exactMatch": false
+  }],
+  "truncatedCount": 3   // omitted when absent; matches above threshold capped at 20
+}
+```
+
+Similarity uses token-set Jaccard on normalized titles (lowercase, punctuation stripped). `exactMatch: true` is set when normalized titles match exactly. Results are sorted by `score` descending and capped at 20 matches (excess reported in `truncatedCount`).
+
+**Idempotency:** read-only.
 
 ---
 

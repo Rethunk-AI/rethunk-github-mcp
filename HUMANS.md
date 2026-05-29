@@ -25,6 +25,10 @@ Set the token in your MCP client's `env` block — see [docs/install.md](docs/in
 **Required scopes depend on what you call:**
 
 - Read-only rollups need repository read access and `read:org` for `org_pulse`.
+- `security_alerts` additionally requires `security_events` scope (or a full `repo` token) to read Dependabot and Code Scanning alerts.
+- `pr_review_thread_ops` requires PR write scope (`repo` or `pull_requests:write`) to resolve or unresolve review threads.
+- `branch_protection_status` requires branch-protection read (repository admin or `repo` scope).
+- `deployment_status` requires deployments read (`repo` scope).
 - Write-capable tools need permission to mutate the target repo's PRs, issues, releases, labels, workflow dispatches, or check runs.
 
 Use a read-only token by default and a separate write-capable token only when you need the mutation tools. `gh_auth_status` is a quick preflight check that confirms whether the server can currently authenticate.
@@ -88,6 +92,11 @@ Minimal MCP client JSON (server name `rethunk-github`):
 | Trigger `workflow_dispatch` | `workflow_dispatch` |
 | Converge labels to a declared set | `labels_sync` |
 | Publish a synthetic check run | `check_run_create` |
+| Security posture: Dependabot + Code Scanning alert summary | `security_alerts` |
+| Resolve or unresolve PR review threads | `pr_review_thread_ops` |
+| Check branch protection rules before editing CI | `branch_protection_status` |
+| Check deployment status and last production deploy | `deployment_status` |
+| Check for duplicate issues before filing a new one | `issue_dedup` |
 
 Full parameter and JSON-shape reference: **[docs/mcp-tools.md](docs/mcp-tools.md)**.
 

@@ -22,7 +22,7 @@ IDEs injecting context: don't re-link from rules.
 | [`src/server/utils.ts`](src/server/utils.ts) | `timeAgo`, `parseSince`, `extractPRNumbers`, `extractFirstPR`, `tailTruncate`, `CheckNode` (interface), `normalizeFailedChecks` — shared across tool files |
 | [`src/server/schemas.ts`](src/server/schemas.ts) | `FormatSchema`, `RepoRefSchema`, `LocalOrRemoteRepoSchema`, `MaxCommitsSchema`, `MaxLogLinesSchema`, **`MAX_REPOS_PER_REQUEST`** (64; caps `repo_status` / `ecosystem_activity` `repos[]`) |
 | [`src/server/github-auth.ts`](src/server/github-auth.ts) | `gateAuth` (GITHUB_TOKEN → GH_TOKEN → gh CLI), `resetAuthCache` |
-| [`src/server/github-client.ts`](src/server/github-client.ts) | `getOctokit` (REST), `graphqlQuery` (typed GraphQL), `asyncPool`, `parallelApi`, `classifyError`, `parseGitHubRemoteUrl`, `resolveLocalRepoRemote`, `PRNode` (interface), `fetchPRMetadata`, `fetchLatestSemverTag` |
+| [`src/server/github-client.ts`](src/server/github-client.ts) | `getOctokit` (REST), `graphqlQuery` (typed GraphQL), `asyncPool`, `asyncPoolSettled`, `parallelApi`, `parallelApiSettled`, `withRetry`, `withTimeout`, `classifyError`, `parseGitHubRemoteUrl`, `resolveLocalRepoRemote`, `PRNode` (interface), `fetchPRMetadata`, `fetchLatestSemverTag` |
 | [`src/server/repo-status-tool.ts`](src/server/repo-status-tool.ts) | `repo_status` — multi-repo dashboard |
 | [`src/server/my-work-tool.ts`](src/server/my-work-tool.ts) | `my_work` — cross-repo personal queue |
 | [`src/server/pr-preflight-tool.ts`](src/server/pr-preflight-tool.ts) | `pr_preflight` — pre-merge safety check |
@@ -42,6 +42,11 @@ IDEs injecting context: don't re-link from rules.
 | [`src/server/actions-runs-filter-tool.ts`](src/server/actions-runs-filter-tool.ts) | `actions_runs_filter` — filter Actions runs |
 | [`src/server/labels-sync-tool.ts`](src/server/labels-sync-tool.ts) | `labels_sync` — converge repository labels |
 | [`src/server/check-run-create-tool.ts`](src/server/check-run-create-tool.ts) | `check_run_create` — publish synthetic GitHub check runs |
+| [`src/server/security-alerts-tool.ts`](src/server/security-alerts-tool.ts) | `registerSecurityAlertsTool`; `security_alerts` — Dependabot + Code Scanning rollup |
+| [`src/server/pr-review-thread-tool.ts`](src/server/pr-review-thread-tool.ts) | `registerPrReviewThreadTool`; `CompactThread` (interface); `pr_review_thread_ops` — list/resolve/unresolve PR review threads |
+| [`src/server/branch-protection-tool.ts`](src/server/branch-protection-tool.ts) | `registerBranchProtectionTool`; `BranchProtectionResult` (interface); `branch_protection_status` — branch protection rules |
+| [`src/server/deployment-status-tool.ts`](src/server/deployment-status-tool.ts) | `registerDeploymentStatusTool`; `DeploymentEntry`, `DeploymentStatusResult` (interfaces); `deployment_status` — deployment state per environment |
+| [`src/server/issue-dedup-tool.ts`](src/server/issue-dedup-tool.ts) | `registerIssueDedupTool`; `normalizeTitle`, `jaccardSimilarity`, `DedupMatch`, `DedupResult` (interfaces); `issue_dedup` — duplicate issue detection |
 | [`src/server/compare-refs.ts`](src/server/compare-refs.ts) | Shared: `resolveRef`, `fetchCommitHistory`, `countBehind` |
 
 ## API strategy

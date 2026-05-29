@@ -26,6 +26,10 @@
 | **`changelog_draft`** | Draft a `CHANGELOG.md` section for unreleased commits, grouped by PR metadata |
 | **`gh_auth_status`** | Check whether the server currently has usable GitHub credentials |
 | **`actions_runs_filter`** | List and filter GitHub Actions runs by workflow, status, conclusion, and branch |
+| **`security_alerts`** | Roll up Dependabot and Code Scanning alerts by severity across a repository |
+| **`branch_protection_status`** | Check branch protection rules for a branch (defaults to the repo default branch) |
+| **`deployment_status`** | Check deployment status and latest state per environment |
+| **`issue_dedup`** | Find likely-duplicate issues by title similarity before opening a new one |
 
 ### Write-capable GitHub tools
 
@@ -38,6 +42,7 @@
 | **`workflow_dispatch`** | Trigger a GitHub Actions workflow_dispatch event |
 | **`labels_sync`** | Converge a repository's labels to a declared set |
 | **`check_run_create`** | Publish a synthetic check run against a commit SHA |
+| **`pr_review_thread_ops`** | List, resolve, or unresolve PR review threads; `resolveOutdated` bulk-resolves outdated threads |
 
 Read-only rollup tools default to compact JSON and usually accept `format: "markdown"` for human-readable output. Write-capable tools always return compact JSON and mutate GitHub state.
 

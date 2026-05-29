@@ -28,6 +28,26 @@ Feature asks driven by real pain points from agent sessions. This file is future
 
 **Ask:** extend the tool with optional branch push, body-from-commits generation, labels, reviewers, and auto-merge knobs.
 
+## Breaking — needs a version decision before implementing
+
+These change the public JSON contract (output shape) and would require an
+`MCP_JSON_FORMAT_VERSION` bump plus coordinated consumer updates. Held out of the
+additive enhancement sweep deliberately; they need an explicit go/no-go.
+
+### Multi-repo parity for single-repo read tools
+
+**Current state:** `repo_status`, `ecosystem_activity`, and `pr_preflight` accept a `LocalOrRemoteRepoSchema[]` array (up to `MAX_REPOS_PER_REQUEST`). `changelog_draft` and `release_readiness` extend `RepoRefSchema` and accept only one repo.
+
+**Remaining pain:** agents cannot batch a changelog/readiness sweep across an org in one call.
+
+**Ask:** accept `repos[]` on the single-repo read tools. Breaking because the top-level result becomes an array (or `{ repos: [...] }`) instead of a single object — decide whether to preserve the single-object shape when exactly one repo is passed, or bump the format version.
+
+### Standardize the error-envelope nesting convention
+
+**Current state:** tool-level failures return a top-level `{ error: {...} }`. Bulk tools (`repo_status`, `ecosystem_activity`) additionally carry a per-item `error` inside each repo result. The two patterns are not documented as a single rule.
+
+**Ask:** ratify and document the convention — top-level `error` = whole-tool failure; nested `error` = per-item failure in a bulk result — and align any tool that diverges. Breaking only if any tool's current shape changes.
+
 ## Low value — nice to have
 
 ### `pr_comment_batch` — side and range support
