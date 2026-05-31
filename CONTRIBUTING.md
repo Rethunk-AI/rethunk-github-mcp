@@ -15,11 +15,11 @@ git clone https://github.com/Rethunk-AI/rethunk-github-mcp.git
 cd rethunk-github-mcp
 bun install
 bun run build       # rimraf dist && tsc → dist/
-bun run check       # Biome lint + format check
-bun run check:fix   # auto-fix with Biome
+bun run lint       # Biome lint + format check
+bun run format   # auto-fix with Biome
 bun run test        # bun test src/
 bun run test:coverage  # coverage-threshold wrapper over Bun coverage (scripts/** ignored)
-bun run release:check  # release-time packaging and changelog sanity checks
+bun run ci  # release-time packaging and changelog sanity checks
 bun run setup-hooks    # one-time per clone: wire .githooks/
 ```
 
@@ -29,7 +29,7 @@ bun run setup-hooks    # one-time per clone: wire .githooks/
 
 | Hook | Runs |
 | ------ | ------ |
-| pre-commit | `bun run check` + `bun run test` |
+| pre-commit | `bun run lint` + `bun run test` |
 | pre-push | frozen install + build + check + test (mirrors CI) |
 
 Set `SKIP_GIT_HOOKS=1` to bypass.
@@ -62,7 +62,7 @@ One logical unit per commit. Max ~7 files. Split by theme, not by file count.
 
 1. `bun install --frozen-lockfile`
 2. `bun run build`
-3. `bun run check` (Biome)
+3. `bun run lint` (Biome)
 4. `bun run test:coverage` + 80% line coverage threshold assertion
 5. Prerelease `npm pack` artifact uploaded (90-day retention)
 
@@ -71,7 +71,7 @@ Match the CI steps locally before opening a PR.
 ## Pull request checklist
 
 - [ ] `bun run build` passes.
-- [ ] `bun run check` passes (no Biome errors).
+- [ ] `bun run lint` passes (no Biome errors).
 - [ ] `bun run test` passes.
 - [ ] Any new tool has a corresponding `*.test.ts` file.
 - [ ] Public tool or auth/root behavior changes are reflected in `docs/mcp-tools.md`, `README.md`, `HUMANS.md`, and `AGENTS.md`.

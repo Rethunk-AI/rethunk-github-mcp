@@ -64,7 +64,7 @@ IDEs injecting context: don't re-link from rules.
 
 ## Validate + CI
 
-Local: `bun run build` | `bun run check` | `bun run test` | `bun run test:coverage` | `bun run release:check`. CI ([`ci.yml`](.github/workflows/ci.yml)) runs install → build → check → `test:coverage` on PRs and `main`, then uploads a prerelease `npm pack` artifact. Tag `v*.*.*` matching `package.json` version → [`release.yml`](.github/workflows/release.yml) reruns build/check/coverage plus `release:check`, publishes GitHub Packages as `@rethunk-ai/github-mcp`, and cuts the GitHub Release tarball.
+Local: `bun run ci` | `bun run test:coverage`. CI ([`ci.yml`](.github/workflows/ci.yml)) runs install → `bun run ci` → `test:coverage` on PRs and `main`, then uploads a prerelease `npm pack` artifact. Tag `v*.*.*` matching `package.json` version → [`release.yml`](.github/workflows/release.yml) reruns `bun run ci` plus coverage, publishes GitHub Packages as `@rethunk-ai/github-mcp`, and cuts the GitHub Release tarball.
 
 Optional [`.githooks/`](.githooks): `bun run setup-hooks` once per clone. pre-commit=`check + test`; pre-push=frozen install + build + check + test.
 
