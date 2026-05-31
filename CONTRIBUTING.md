@@ -5,7 +5,7 @@ Rethunk AI internal project. External PRs are not expected, but the process is d
 ## Prerequisites
 
 - **Node.js ≥ 22** — see [docs/install.md](docs/install.md) *Prerequisites* for version notes.
-- **Bun ≥ 1.3.11** (`packageManager` in `package.json`) — only needed to build and test from source.
+- **Bun ≥ 1.3.13** (`packageManager` in `package.json`) — only needed to build and test from source.
 - **Git ≥ 2.28**.
 
 ## Development setup
