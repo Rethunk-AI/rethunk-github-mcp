@@ -44,98 +44,118 @@ describe("actions_runs_filter tool", () => {
     }
   });
 
-  test("returns runs list structure when successful", async () => {
-    const text = await run({
-      owner: "Rethunk-AI",
-      repo: "rethunk-github-mcp",
-      limit: 5,
-    });
-    const parsed = JSON.parse(text) as {
-      error?: { code: string };
-      runs?: Array<{
-        id: number;
-        name: string;
-        status: string;
-        conclusion: string | null;
-        branch: string;
-        createdAt: string;
-        url: string;
-      }>;
-    };
+  test(
+    "returns runs list structure when successful",
+    async () => {
+      const text = await run({
+        owner: "Rethunk-AI",
+        repo: "rethunk-github-mcp",
+        limit: 5,
+      });
+      const parsed = JSON.parse(text) as {
+        error?: { code: string };
+        runs?: Array<{
+          id: number;
+          name: string;
+          status: string;
+          conclusion: string | null;
+          branch: string;
+          createdAt: string;
+          url: string;
+        }>;
+      };
 
-    // If no auth error
-    if (!parsed.error || parsed.error.code !== "AUTH_MISSING") {
-      if (parsed.runs !== undefined) {
-        expect(Array.isArray(parsed.runs)).toBe(true);
-        if (parsed.runs.length > 0) {
-          const run = parsed.runs[0];
-          expect(typeof run.id).toBe("number");
-          expect(typeof run.name).toBe("string");
-          expect(typeof run.status).toBe("string");
-          expect(typeof run.createdAt).toBe("string");
-          expect(typeof run.url).toBe("string");
+      // If no auth error
+      if (!parsed.error || parsed.error.code !== "AUTH_MISSING") {
+        if (parsed.runs !== undefined) {
+          expect(Array.isArray(parsed.runs)).toBe(true);
+          if (parsed.runs.length > 0) {
+            const run = parsed.runs[0];
+            expect(typeof run.id).toBe("number");
+            expect(typeof run.name).toBe("string");
+            expect(typeof run.status).toBe("string");
+            expect(typeof run.createdAt).toBe("string");
+            expect(typeof run.url).toBe("string");
+          }
         }
       }
-    }
-  });
+    },
+    { timeout: 15000 },
+  );
 
-  test("respects limit parameter", async () => {
-    const text = await run({
-      owner: "Rethunk-AI",
-      repo: "rethunk-github-mcp",
-      limit: 3,
-    });
-    const parsed = JSON.parse(text) as { error?: { code: string }; runs?: unknown[] };
+  test(
+    "respects limit parameter",
+    async () => {
+      const text = await run({
+        owner: "Rethunk-AI",
+        repo: "rethunk-github-mcp",
+        limit: 3,
+      });
+      const parsed = JSON.parse(text) as { error?: { code: string }; runs?: unknown[] };
 
-    if (!parsed.error && parsed.runs) {
-      expect(parsed.runs.length).toBeLessThanOrEqual(3);
-    }
-  });
+      if (!parsed.error && parsed.runs) {
+        expect(parsed.runs.length).toBeLessThanOrEqual(3);
+      }
+    },
+    { timeout: 15000 },
+  );
 
-  test("accepts optional filters", async () => {
-    const text = await run({
-      owner: "Rethunk-AI",
-      repo: "rethunk-github-mcp",
-      status: "completed",
-      limit: 10,
-    });
-    const parsed = JSON.parse(text) as { error?: { code: string }; runs?: unknown[] };
+  test(
+    "accepts optional filters",
+    async () => {
+      const text = await run({
+        owner: "Rethunk-AI",
+        repo: "rethunk-github-mcp",
+        status: "completed",
+        limit: 10,
+      });
+      const parsed = JSON.parse(text) as { error?: { code: string }; runs?: unknown[] };
 
-    if (!parsed.error && parsed.runs) {
-      // Should not throw
-      expect(Array.isArray(parsed.runs)).toBe(true);
-    }
-  });
+      if (!parsed.error && parsed.runs) {
+        // Should not throw
+        expect(Array.isArray(parsed.runs)).toBe(true);
+      }
+    },
+    { timeout: 15000 },
+  );
 
-  test("handles workflow filter", async () => {
-    const text = await run({
-      owner: "Rethunk-AI",
-      repo: "rethunk-github-mcp",
-      workflow: "CI",
-      limit: 5,
-    });
-    const parsed = JSON.parse(text) as { error?: { code: string }; runs?: unknown[] };
+  test(
+    "handles workflow filter",
+    async () => {
+      const text = await run({
+        owner: "Rethunk-AI",
+        repo: "rethunk-github-mcp",
+        workflow: "CI",
+        limit: 5,
+      });
+      const parsed = JSON.parse(text) as { error?: { code: string }; runs?: unknown[] };
 
-    if (!parsed.error && parsed.runs) {
-      // Workflow filter applied
-      expect(Array.isArray(parsed.runs)).toBe(true);
-    }
-  });
+      if (!parsed.error && parsed.runs) {
+        // Workflow filter applied
+        expect(Array.isArray(parsed.runs)).toBe(true);
+      }
+    },
+    { timeout: 15000 },
+  );
 
-  test("accepts conclusion and branch filters together", async () => {
-    const text = await run({
-      owner: "Rethunk-AI",
-      repo: "rethunk-github-mcp",
-      conclusion: "success",
-      branch: "main",
-      limit: 3,
-    });
-    const parsed = JSON.parse(text) as { error?: { code: string }; runs?: unknown[] };
+  test(
+    "accepts conclusion and branch filters together",
+    async () => {
+      const text = await run({
+        owner: "Rethunk-AI",
+        repo: "rethunk-github-mcp",
+        conclusion: "success",
+        branch: "main",
+        limit: 3,
+      });
+      const parsed = JSON.parse(text) as { error?: { code: string }; runs?: unknown[] };
 
-    if (!parsed.error && parsed.runs) {
-      expect(Array.isArray(parsed.runs)).toBe(true);
-    }
-  });
+      if (!parsed.error && parsed.runs) {
+        expect(Array.isArray(parsed.runs)).toBe(true);
+      }
+    },
+    { timeout: 15000 },
+  );
 });
 
 // ---------------------------------------------------------------------------
