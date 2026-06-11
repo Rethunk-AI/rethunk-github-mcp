@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] — 2026-06-11
+
+### Fixed
+
+- **Release workflow** now selects the newest `npm pack` tarball via `find` + sort instead of `ls -t`, fixing asset selection on Linux runners.
+- **CI workflows** pinned all action tags to commit SHAs and added least-privilege `permissions` blocks, resolving 5 CodeQL workflow-hardening alerts.
+
+### Changed
+
+- **`package.json` scripts** standardized: lint, format, typecheck, test, build, and ci targets aligned across the package.
+- **Dependencies and tooling refreshed**: Bun bumped to 1.3.14, stale `bun.lock` overrides removed, all Node lockfiles and manifests updated to latest compatible versions.
+
+### Tests
+
+- Extended `actions_runs_filter` test coverage with additional branch paths.
+
 ## [1.3.0] — 2026-05-29
 
 ### Added
@@ -395,6 +411,7 @@ Initial public tool surface: `repo_status`, `my_work`, `pr_preflight`,
 `release_readiness`, `ci_diagnosis`, `org_pulse`, `pin_drift`,
 `ecosystem_activity`, `module_pin_hint`.
 
+[1.3.1]: https://github.com/Rethunk-AI/rethunk-github-mcp/compare/v1.3.0...v1.3.1
 [1.2.0]: https://github.com/Rethunk-AI/rethunk-github-mcp/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Rethunk-AI/rethunk-github-mcp/compare/v1.0.4...v1.1.0
 [1.0.4]: https://github.com/Rethunk-AI/rethunk-github-mcp/compare/v1.0.3...v1.0.4
