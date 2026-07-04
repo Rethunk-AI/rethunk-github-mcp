@@ -303,6 +303,67 @@ describe("release_readiness execute body (mocked)", () => {
   });
 
   // -------------------------------------------------------------------------
+  // C2: Long commit message → JSON path truncates to 72 chars (same bound as
+  //     markdown), instead of emitting the raw first line untruncated.
+  // -------------------------------------------------------------------------
+  test("long commit message → JSON output truncates to 72 chars", async () => {
+    const longSubject =
+      "feat: this is a deliberately long commit subject line that exceeds the seventy-two character truncation bound used elsewhere";
+
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      repos: {
+        get: async () => ({ data: { default_branch: "main" } }),
+        compareCommitsWithBasehead: async () => ({
+          data: {
+            ahead_by: 1,
+            commits: [
+              {
+                sha: "ddd1234567890abcdef1234567890abcdef123456",
+                commit: {
+                  message: `${longSubject}\n\nExtended body text that must not appear.`,
+                  author: { name: "Carol", date: "2025-01-03T00:00:00Z" },
+                },
+                author: { login: "carol" },
+              },
+            ],
+            files: [],
+          },
+        }),
+        getReleaseByTag: async () => {
+          throw new Error("not a release tag");
+        },
+      },
+    } as never);
+
+    const fetchPRSpy = spyOn(githubClient, "fetchPRMetadata").mockResolvedValue(new Map());
+
+    const graphqlSpy = spyOn(githubClient, "graphqlQuery").mockResolvedValue({
+      repository: {
+        object: {
+          statusCheckRollup: { state: "SUCCESS", contexts: { nodes: [] } },
+        },
+      },
+    } as never);
+
+    const run = captureTool(registerReleaseReadinessTool);
+    const text = await run({
+      owner: "Acme",
+      repo: "svc",
+      base: "v1.0.0",
+      head: "main",
+      format: "json",
+    });
+
+    octokitSpy.mockRestore();
+    fetchPRSpy.mockRestore();
+    graphqlSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as { commits: Array<{ message: string }> };
+    expect(parsed.commits[0].message).toBe(`${longSubject.slice(0, 72)}… [truncated]`);
+    expect(parsed.commits[0].message).not.toContain("Extended body text");
+  });
+
+  // -------------------------------------------------------------------------
   // D: fetchLatestSemverTag returns null → NOT_FOUND error envelope.
   //    Covers: 221-229.
   // -------------------------------------------------------------------------

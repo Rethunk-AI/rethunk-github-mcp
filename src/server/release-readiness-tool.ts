@@ -256,7 +256,7 @@ export function registerReleaseReadinessTool(server: FastMCP): void {
           const firstPR = prNums[0] !== undefined ? prMap.get(prNums[0]) : undefined;
           return {
             sha7: sha7(c.sha),
-            message: firstLine(c.commit.message),
+            message: truncateText(firstLine(c.commit.message), 72),
             author: c.commit.author?.name ?? c.author?.login ?? "unknown",
             date: c.commit.author?.date ?? "",
             ...(firstPR
