@@ -61,7 +61,7 @@
   "dependencies": {
     "@octokit/graphql": "^9.0.3",
     "@octokit/rest": "^22.0.1",
-    "fastmcp": "^4.3.2",
+    "fastmcp": "^4.4.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
