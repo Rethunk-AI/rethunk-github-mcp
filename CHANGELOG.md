@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-07-03
+
+A token-cost pass across the tool surface: bounds worst-case payload size,
+drops reconstructable per-item fields, and dedupes repeated schema prose.
+
+### Breaking Changes
+
+- **`actions_runs_filter`** `limit` maximum lowered from **500** to **200** — worst-case JSON payload (500 full-`html_url` runs, ~75,000 chars) is now bounded to a fraction of that.
+- **`actions_runs_filter`**, **`issue_dedup`**: JSON output no longer includes a per-item **`url`** field. **`security_alerts`**: JSON output no longer includes a per-item **`htmlUrl`** field. All three are deterministically reconstructable by the caller from `owner`/`repo`/the item's number or ID (`.../actions/runs/{id}`, `.../issues/{number}`, `.../security/dependabot/{number}`, `.../security/code-scanning/{number}`); `format=markdown` still renders clickable links.
+- **`MCP_JSON_FORMAT_VERSION`** bumped to **`"3"`** to mark this JSON shape change.
+
+### Fixed
+
+- **`release_readiness`** JSON output emitted raw, untruncated commit message first lines; now truncated to 72 chars, matching the markdown path.
+
+### Changed
+
+- **Schema descriptions deduped:** the `owner`/`repo` description pair, repeated near-identically across ~17 tool schemas, is now the shared, shorter `"Owner."` / `"Repo."`. The 8 near-duplicate `dryRun` descriptions are now one shared phrasing. Non-breaking (values/validation unchanged) but reduces `tools/list` wire size.
+- **Every remaining unbounded `z.number().int()` parameter** now has an explicit `.max()` reflecting its real-world range (PR/line numbers capped at 10,000,000; `ci_diagnosis`'s `runId` capped much higher since GitHub Actions run IDs are large, ever-growing database IDs) instead of relying on zod's implicit ~9e15 default.
+
 ## [1.3.1] — 2026-06-11
 
 ### Fixed

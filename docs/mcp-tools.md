@@ -666,7 +666,7 @@ On missing or invalid auth, the tool returns `{ "authenticated": false }` instea
 | `status` | `"queued" \| "in_progress" \| "completed"` | no | — | Filter by run status. |
 | `conclusion` | `"success" \| "failure" \| "cancelled"` | no | — | Filter by run conclusion. |
 | `branch` | `string` | no | — | Filter by branch name. |
-| `limit` | `int` | no | `20` | Maximum number of runs to return (1–500, default 20). |
+| `limit` | `int` | no | `20` | Maximum number of runs to return (1–200, default 20). |
 | `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
 **JSON output:**
@@ -679,12 +679,13 @@ On missing or invalid auth, the tool returns `{ "authenticated": false }` instea
     "status": "completed",
     "conclusion": "failure",
     "branch": "main",
-    "createdAt": "2026-05-01T10:00:00Z",
-    "url": "https://github.com/org/repo/actions/runs/12345"
+    "createdAt": "2026-05-01T10:00:00Z"
   }],
   "truncatedCount": 12   // omitted when 0; total available minus returned
 }
 ```
+
+No per-item `url` — reconstruct as `https://github.com/{owner}/{repo}/actions/runs/{id}`. `format=markdown` renders this link inline.
 
 ---
 
@@ -781,8 +782,7 @@ If `status` is `"completed"` without a `conclusion`, the tool returns a `VALIDAT
       "severity": "high",
       "state": "open",
       "package": "lodash",
-      "summary": "Prototype pollution in lodash",
-      "htmlUrl": "https://github.com/org/repo/security/dependabot/12"
+      "summary": "Prototype pollution in lodash"
     }]
   },
   "codeScanning": {
@@ -793,12 +793,13 @@ If `status` is `"completed"` without a `conclusion`, the tool returns a `VALIDAT
       "number": 3,
       "ruleId": "js/code-injection",
       "severity": "critical",
-      "state": "open",
-      "htmlUrl": "https://github.com/org/repo/security/code-scanning/3"
+      "state": "open"
     }]
   }
 }
 ```
+
+No per-item `htmlUrl` — reconstruct as `https://github.com/{owner}/{repo}/security/dependabot/{number}` (Dependabot) or `https://github.com/{owner}/{repo}/security/code-scanning/{number}` (Code Scanning). `format=markdown` renders these links inline.
 
 When a source is disabled or not accessible (HTTP 403/404), it reports `{ "enabled": false, "reason": "..." }` instead of an error, and the other source is still returned. `truncatedCount` on each source shows how many alerts matched but were not returned due to `limit`.
 
@@ -958,13 +959,14 @@ When the branch has no protection rules, returns `{ "branch": "main", "protected
     "number": 88,
     "title": "Safari click handler regression",
     "state": "open",
-    "url": "https://github.com/org/repo/issues/88",
     "score": 0.67,
     "exactMatch": false
   }],
   "truncatedCount": 3   // omitted when absent; matches above threshold capped at 20
 }
 ```
+
+No per-item `url` — reconstruct as `https://github.com/{owner}/{repo}/issues/{number}`. `format=markdown` renders this link inline.
 
 Similarity uses token-set Jaccard on normalized titles (lowercase, punctuation stripped). `exactMatch: true` is set when normalized titles match exactly. Results are sorted by `score` descending and capped at 20 matches (excess reported in `truncatedCount`).
 
