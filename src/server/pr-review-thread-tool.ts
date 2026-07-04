@@ -68,9 +68,9 @@ export function registerPrReviewThreadTool(server: FastMCP): void {
       "resolveOutdated=true (with action=resolve) resolves all currently-unresolved AND outdated threads.",
     annotations: { readOnlyHint: false },
     parameters: z.object({
-      owner: z.string().describe("GitHub repository owner or organization."),
-      repo: z.string().describe("GitHub repository name."),
-      prNumber: z.number().int().positive().describe("Pull request number."),
+      owner: z.string().describe("Owner."),
+      repo: z.string().describe("Repo."),
+      prNumber: z.number().int().positive().max(10_000_000).describe("Pull request number."),
       action: z
         .enum(["list", "resolve", "unresolve"])
         .describe("Operation: list threads, resolve them, or unresolve them."),
@@ -91,9 +91,7 @@ export function registerPrReviewThreadTool(server: FastMCP): void {
         .boolean()
         .optional()
         .default(false)
-        .describe(
-          "If true, compute the target thread set and return it WITHOUT mutating (mirrors labels_sync dryRun).",
-        ),
+        .describe("Preview only; returns the planned change without mutating."),
     }),
     execute: async (args) => {
       const auth = gateAuth();

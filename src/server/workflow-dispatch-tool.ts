@@ -35,9 +35,7 @@ export function registerWorkflowDispatchTool(server: FastMCP): void {
         .boolean()
         .optional()
         .default(false)
-        .describe(
-          "If true, return the resolved parameters that WOULD be dispatched WITHOUT triggering the workflow.",
-        ),
+        .describe("Preview only; returns the planned change without mutating."),
     }),
     execute: async (args) => {
       const auth = gateAuth();

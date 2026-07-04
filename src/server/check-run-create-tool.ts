@@ -30,8 +30,8 @@ export function registerCheckRunCreateTool(server: FastMCP): void {
       "Create a check run on a GitHub repository. Used to report custom CI/CD status and conclusions to a pull request or commit.",
     annotations: { readOnlyHint: false },
     parameters: z.object({
-      owner: z.string().describe("GitHub owner or organization."),
-      repo: z.string().describe("GitHub repository name."),
+      owner: z.string().describe("Owner."),
+      repo: z.string().describe("Repo."),
       name: z.string().describe("The name of the check run."),
       headSha: z.string().describe("The SHA of the commit to attach the check run to."),
       status: z
@@ -51,9 +51,7 @@ export function registerCheckRunCreateTool(server: FastMCP): void {
         .boolean()
         .optional()
         .default(false)
-        .describe(
-          "If true, compute and return the planned check run (owner/repo/name/headSha/status/conclusion/title/summary) WITHOUT executing any mutation.",
-        ),
+        .describe("Preview only; returns the planned change without mutating."),
     }),
     execute: async (args) => {
       // gateAuth before try so auth errors are not swallowed by the catch

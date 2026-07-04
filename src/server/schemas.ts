@@ -6,8 +6,8 @@ export const MAX_REPOS_PER_REQUEST = 64;
 export const FormatSchema = z.enum(["markdown", "json"]).optional().default("json");
 
 export const RepoRefSchema = z.object({
-  owner: z.string().describe("GitHub owner or organization."),
-  repo: z.string().describe("GitHub repository name."),
+  owner: z.string().describe("Owner."),
+  repo: z.string().describe("Repo."),
 });
 
 export const LocalOrRemoteRepoSchema = z.union([

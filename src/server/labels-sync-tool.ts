@@ -32,8 +32,8 @@ export function registerLabelsSyncTool(server: FastMCP): void {
       "Synchronize labels in a GitHub repository. Creates new labels, updates existing ones, and optionally deletes extra labels not in the provided list.",
     annotations: { readOnlyHint: false },
     parameters: z.object({
-      owner: z.string().describe("GitHub owner or organization."),
-      repo: z.string().describe("GitHub repository name."),
+      owner: z.string().describe("Owner."),
+      repo: z.string().describe("Repo."),
       labels: z
         .array(
           z.object({
@@ -52,9 +52,7 @@ export function registerLabelsSyncTool(server: FastMCP): void {
         .boolean()
         .optional()
         .default(false)
-        .describe(
-          "If true, compute and return the planned changes (created/updated/deleted/skipped) WITHOUT executing any mutation.",
-        ),
+        .describe("Preview only; returns the planned change without mutating."),
     }),
     execute: async (args) => {
       // gateAuth before try so auth errors are not swallowed by the catch

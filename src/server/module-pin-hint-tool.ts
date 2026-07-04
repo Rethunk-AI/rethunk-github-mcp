@@ -124,8 +124,8 @@ export function registerModulePinHintTool(server: FastMCP): void {
       "Returns the correctly-formatted Go module pseudo-version (v0.0.0-YYYYMMDDHHMMSS-sha12) for a given repo+ref. Useful for `go.mod` SHA pins.",
     annotations: { readOnlyHint: true },
     parameters: z.object({
-      owner: z.string().describe("GitHub owner or organization."),
-      repo: z.string().describe("GitHub repository name."),
+      owner: z.string().describe("Owner."),
+      repo: z.string().describe("Repo."),
       ref: z.string().optional().describe("Branch, tag, or SHA; defaults to default branch HEAD."),
       language: z
         .string()

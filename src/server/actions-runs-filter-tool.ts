@@ -26,8 +26,8 @@ export function registerActionsRunsFilterTool(server: FastMCP): void {
       "List and filter GitHub Actions workflow runs for a repository. Filter by workflow name, status, conclusion, and branch.",
     annotations: { readOnlyHint: true },
     parameters: z.object({
-      owner: z.string().describe("GitHub owner or organization."),
-      repo: z.string().describe("GitHub repository name."),
+      owner: z.string().describe("Owner."),
+      repo: z.string().describe("Repo."),
       workflow: z.string().optional().describe("Workflow name or ID to filter by."),
       status: z
         .enum(["queued", "in_progress", "completed"])

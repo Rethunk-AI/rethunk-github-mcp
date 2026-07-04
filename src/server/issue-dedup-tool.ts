@@ -82,8 +82,8 @@ export function registerIssueDedupTool(server: FastMCP): void {
       "Before opening an issue, check for likely duplicates in the repository. Returns existing issues ranked by title similarity to the candidate title.",
     annotations: { readOnlyHint: true },
     parameters: z.object({
-      owner: z.string().describe("GitHub owner or organization."),
-      repo: z.string().describe("GitHub repository name."),
+      owner: z.string().describe("Owner."),
+      repo: z.string().describe("Repo."),
       title: z.string().describe("The candidate issue title to check for duplicates."),
       labels: z
         .array(z.string())

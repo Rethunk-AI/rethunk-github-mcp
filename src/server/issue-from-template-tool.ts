@@ -184,9 +184,7 @@ export function registerIssueFromTemplateTool(server: FastMCP): void {
         .boolean()
         .optional()
         .default(false)
-        .describe(
-          "If true, fetch and render the template (variable substitution included), then return the planned issue (owner/repo/title/bodyPreview/labels) WITHOUT executing any mutation.",
-        ),
+        .describe("Preview only; returns the planned change without mutating."),
     }),
     execute: async (args) => {
       const auth = gateAuth();

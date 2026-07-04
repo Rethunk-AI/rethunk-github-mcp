@@ -447,10 +447,11 @@ export function registerPrPreflightTool(server: FastMCP): void {
         .number()
         .int()
         .positive()
+        .max(10_000_000)
         .optional()
         .describe("Single PR number (use `numbers` for batch)."),
       numbers: z
-        .array(z.number().int().positive())
+        .array(z.number().int().positive().max(10_000_000))
         .optional()
         .describe("Batch PR numbers to check in one call."),
       ref: z

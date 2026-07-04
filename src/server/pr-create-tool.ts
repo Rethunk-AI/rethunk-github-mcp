@@ -62,9 +62,7 @@ export function registerPrCreateTool(server: FastMCP): void {
         .boolean()
         .optional()
         .default(false)
-        .describe(
-          "If true, compute and return the planned PR creation (owner/repo/head/base/title/draft/bodyPreview) WITHOUT executing any mutation.",
-        ),
+        .describe("Preview only; returns the planned change without mutating."),
     }),
     execute: async (args) => {
       const auth = gateAuth();

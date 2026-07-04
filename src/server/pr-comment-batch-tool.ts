@@ -46,7 +46,7 @@ export function registerPrCommentBatchTool(server: FastMCP): void {
       "Submit a PR review with inline comments in a single API call. Accepts a review body, inline comments (file/line/body), and event type (COMMENT, APPROVE, REQUEST_CHANGES).",
     annotations: { readOnlyHint: false },
     parameters: RepoRefSchema.extend({
-      pullNumber: z.number().int().positive().describe("Pull request number."),
+      pullNumber: z.number().int().positive().max(10_000_000).describe("Pull request number."),
       body: z.string().optional().describe("Overall review body text."),
       event: z
         .enum(["COMMENT", "APPROVE", "REQUEST_CHANGES"])
@@ -57,7 +57,12 @@ export function registerPrCommentBatchTool(server: FastMCP): void {
         .array(
           z.object({
             path: z.string().describe("File path relative to repository root."),
-            line: z.number().int().positive().describe("Line number for the comment."),
+            line: z
+              .number()
+              .int()
+              .positive()
+              .max(10_000_000)
+              .describe("Line number for the comment."),
             body: z.string().describe("Inline comment text."),
           }),
         )
@@ -67,9 +72,7 @@ export function registerPrCommentBatchTool(server: FastMCP): void {
         .boolean()
         .optional()
         .default(false)
-        .describe(
-          "If true, compute and return the planned review (owner/repo/prNumber/event/commentCount/comments) WITHOUT executing any mutation.",
-        ),
+        .describe("Preview only; returns the planned change without mutating."),
     }),
     execute: async (args) => {
       const auth = gateAuth();

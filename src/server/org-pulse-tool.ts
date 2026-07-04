@@ -231,6 +231,7 @@ export function registerOrgPulseTool(server: FastMCP): void {
         .number()
         .int()
         .min(1)
+        .max(10_000_000)
         .optional()
         .default(7)
         .describe("Days without activity before a PR is considered stale."),

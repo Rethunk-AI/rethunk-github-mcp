@@ -61,8 +61,8 @@ export function registerDeploymentStatusTool(server: FastMCP): void {
       "Check deployment status for a GitHub repository. Answers whether production is healthy and when the last deployment occurred. Optionally filter by environment.",
     annotations: { readOnlyHint: true },
     parameters: z.object({
-      owner: z.string().describe("GitHub owner or organization."),
-      repo: z.string().describe("GitHub repository name."),
+      owner: z.string().describe("Owner."),
+      repo: z.string().describe("Repo."),
       environment: z
         .string()
         .optional()

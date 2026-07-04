@@ -63,8 +63,8 @@ export function registerBranchProtectionTool(server: FastMCP): void {
       "Check branch protection rules for a GitHub repository branch. Useful for verifying protection before editing CI so you won't lock yourself out. Omit branch to query the default branch.",
     annotations: { readOnlyHint: true },
     parameters: z.object({
-      owner: z.string().describe("GitHub owner or organization."),
-      repo: z.string().describe("GitHub repository name."),
+      owner: z.string().describe("Owner."),
+      repo: z.string().describe("Repo."),
       branch: z
         .string()
         .optional()

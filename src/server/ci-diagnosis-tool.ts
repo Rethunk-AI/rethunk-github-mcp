@@ -40,9 +40,18 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
         .number()
         .int()
         .positive()
+        .max(10_000_000)
         .optional()
         .describe("PR number; finds runs for its head SHA."),
-      runId: z.number().int().positive().optional().describe("Exact run ID to fetch."),
+      // GitHub Actions run IDs are large, ever-growing database IDs (already
+      // 10+ digits) — bounded well above real IDs, not at the small-counter cap.
+      runId: z
+        .number()
+        .int()
+        .positive()
+        .max(10_000_000_000_000)
+        .optional()
+        .describe("Exact run ID to fetch."),
       maxLogLines: MaxLogLinesSchema.describe("Max lines per job log tail."),
       grepLog: z
         .string()

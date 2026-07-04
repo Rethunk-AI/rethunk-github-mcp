@@ -148,8 +148,8 @@ export function registerSecurityAlertsTool(server: FastMCP): void {
       "Roll up a repository's open security posture for an LLM agent — Dependabot alerts and Code Scanning alerts grouped by severity, compact output.",
     annotations: { readOnlyHint: true },
     parameters: z.object({
-      owner: z.string().describe("GitHub owner or organization."),
-      repo: z.string().describe("GitHub repository name."),
+      owner: z.string().describe("Owner."),
+      repo: z.string().describe("Repo."),
       state: z
         .enum(["open", "dismissed", "fixed", "auto_dismissed"])
         .optional()
