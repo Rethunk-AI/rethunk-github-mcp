@@ -17,8 +17,8 @@ import {
 import { captureTool } from "./test-harness.js";
 
 describe("MCP_JSON_FORMAT_VERSION", () => {
-  test("is '2'", () => {
-    expect(MCP_JSON_FORMAT_VERSION).toBe("2");
+  test("is '3'", () => {
+    expect(MCP_JSON_FORMAT_VERSION).toBe("3");
   });
 });
 

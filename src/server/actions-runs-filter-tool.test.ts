@@ -61,7 +61,6 @@ describe("actions_runs_filter tool", () => {
           conclusion: string | null;
           branch: string;
           createdAt: string;
-          url: string;
         }>;
       };
 
@@ -75,7 +74,6 @@ describe("actions_runs_filter tool", () => {
             expect(typeof run.name).toBe("string");
             expect(typeof run.status).toBe("string");
             expect(typeof run.createdAt).toBe("string");
-            expect(typeof run.url).toBe("string");
           }
         }
       }
@@ -214,10 +212,41 @@ describe("actions_runs_filter tool (mocked)", () => {
     const text = await run({ owner: "Acme", repo: "svc", limit: 3 });
     octokitSpy.mockRestore();
 
-    const parsed = JSON.parse(text) as { runs: unknown[]; truncatedCount?: number };
+    const parsed = JSON.parse(text) as {
+      runs: Array<{ id: number; url?: string }>;
+      truncatedCount?: number;
+    };
     expect(parsed.runs).toHaveLength(3);
     // total_count(50) - returned(3) = 47
     expect(parsed.truncatedCount).toBe(47);
+    // Per-item url/html_url dropped from JSON — reconstructable from owner/repo/id.
+    expect(parsed.runs[0]?.url).toBeUndefined();
+    expect(text).not.toContain("html_url");
+  });
+
+  test("markdown format reconstructs run URL from owner/repo/id (no stored url field)", async () => {
+    const makeRun = (id: number) => ({
+      id,
+      name: `run-${id}`,
+      status: "completed",
+      conclusion: "success",
+      head_branch: "main",
+      created_at: "2024-01-01T00:00:00Z",
+      html_url: `https://github.com/run/${id}`,
+    });
+
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      actions: { listWorkflowRunsForRepo: {} },
+      paginate: {
+        iterator: () => makePaginateIterator([{ total_count: 1, workflow_runs: [makeRun(42)] }])(),
+      },
+    } as never);
+
+    const run = captureTool(registerActionsRunsFilterTool);
+    const text = await run({ owner: "Acme", repo: "svc", limit: 5, format: "markdown" });
+    octokitSpy.mockRestore();
+
+    expect(text).toContain("[42](https://github.com/Acme/svc/actions/runs/42)");
   });
 
   test("pagination: fetches across multiple pages up to limit", async () => {

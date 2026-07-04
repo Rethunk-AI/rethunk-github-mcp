@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
  * it appearing in tool output. Bump this value (with a corresponding breaking
  * change note) if a future incompatible JSON shape change is introduced.
  */
-export const MCP_JSON_FORMAT_VERSION = "2" as const;
+export const MCP_JSON_FORMAT_VERSION = "3" as const;
 
 let _cachedVersion: string | undefined;
 

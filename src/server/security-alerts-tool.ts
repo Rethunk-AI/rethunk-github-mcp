@@ -23,7 +23,6 @@ interface DependabotAlertEntry {
   state: string;
   package: string;
   summary: string;
-  htmlUrl: string;
 }
 
 interface CodeScanningAlertEntry {
@@ -31,7 +30,6 @@ interface CodeScanningAlertEntry {
   ruleId: string;
   severity: string | null;
   state: string;
-  htmlUrl: string;
 }
 
 interface DependabotSource {
@@ -87,7 +85,12 @@ function addToRollup(rollup: SeverityRollup, severity: string | null | undefined
   else if (severity === "low") rollup.low++;
 }
 
-function formatMarkdown(output: SecurityAlertsOutput): string {
+/**
+ * Render the security alerts markdown summary. Per-alert links are
+ * reconstructed from owner/repo/number here (not stored on the JSON-facing
+ * alert entries) since GitHub's alert URLs are a deterministic pattern.
+ */
+function formatMarkdown(owner: string, repo: string, output: SecurityAlertsOutput): string {
   const { rollup, dependabot, codeScanning } = output;
   const lines: string[] = ["## Security Alerts Summary", ""];
 
@@ -106,7 +109,8 @@ function formatMarkdown(output: SecurityAlertsOutput): string {
   } else {
     lines.push(`**Dependabot** (${dependabot.total} alert${dependabot.total !== 1 ? "s" : ""}):`);
     for (const a of dependabot.alerts) {
-      lines.push(`- [#${a.number}](${a.htmlUrl}) \`${a.package}\` — ${a.severity}: ${a.summary}`);
+      const url = `https://github.com/${owner}/${repo}/security/dependabot/${a.number}`;
+      lines.push(`- [#${a.number}](${url}) \`${a.package}\` — ${a.severity}: ${a.summary}`);
     }
     if (dependabot.truncatedCount > 0) {
       lines.push(`- … and ${dependabot.truncatedCount} more`);
@@ -122,9 +126,8 @@ function formatMarkdown(output: SecurityAlertsOutput): string {
       `**Code Scanning** (${codeScanning.total} alert${codeScanning.total !== 1 ? "s" : ""}):`,
     );
     for (const a of codeScanning.alerts) {
-      lines.push(
-        `- [#${a.number}](${a.htmlUrl}) \`${a.ruleId}\` — ${a.severity ?? "unknown severity"}`,
-      );
+      const url = `https://github.com/${owner}/${repo}/security/code-scanning/${a.number}`;
+      lines.push(`- [#${a.number}](${url}) \`${a.ruleId}\` — ${a.severity ?? "unknown severity"}`);
     }
     if (codeScanning.truncatedCount > 0) {
       lines.push(`- … and ${codeScanning.truncatedCount} more`);
@@ -248,7 +251,6 @@ export function registerSecurityAlertsTool(server: FastMCP): void {
             state: a.state,
             package: a.dependency.package?.name ?? "unknown",
             summary: a.security_advisory.summary,
-            htmlUrl: a.html_url,
           }));
 
           for (const a of alerts) {
@@ -299,7 +301,6 @@ export function registerSecurityAlertsTool(server: FastMCP): void {
             ruleId: a.rule.id ?? "unknown",
             severity: a.rule.security_severity_level ?? null,
             state: a.state ?? "unknown",
-            htmlUrl: a.html_url,
           }));
 
           for (const a of alerts) {
@@ -321,7 +322,7 @@ export function registerSecurityAlertsTool(server: FastMCP): void {
         };
 
         if (args.format === "markdown") {
-          return formatMarkdown(output);
+          return formatMarkdown(owner, repo, output);
         }
         return jsonRespond(output);
       } catch (err) {

@@ -58,7 +58,6 @@ export interface DedupMatch {
   number: number;
   title: string;
   state: string;
-  url: string;
   score: number;
   exactMatch: boolean;
 }
@@ -149,7 +148,6 @@ export function registerIssueDedupTool(server: FastMCP): void {
               number: issue.number,
               title: issueTitle,
               state: issue.state ?? "open",
-              url: issue.html_url ?? `https://github.com/${owner}/${repo}/issues/${issue.number}`,
               score: Math.round(score * 100) / 100,
               exactMatch: isExact,
             });
@@ -189,8 +187,9 @@ export function registerIssueDedupTool(server: FastMCP): void {
           );
           for (const m of matches) {
             const exact = m.exactMatch ? " *(exact match)*" : "";
+            const url = `https://github.com/${owner}/${repo}/issues/${m.number}`;
             lines.push(
-              `- [#${m.number}](${m.url}) **${m.title}** — score: ${m.score}${exact} \`[${m.state}]\``,
+              `- [#${m.number}](${url}) **${m.title}** — score: ${m.score}${exact} \`[${m.state}]\``,
             );
           }
           if (truncatedCount) {

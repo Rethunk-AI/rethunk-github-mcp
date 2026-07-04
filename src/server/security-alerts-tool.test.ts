@@ -136,7 +136,6 @@ describe("security_alerts tool", () => {
           severity: string;
           package: string;
           summary: string;
-          htmlUrl: string;
         }[];
       };
       codeScanning: {
@@ -148,7 +147,6 @@ describe("security_alerts tool", () => {
           ruleId: string;
           severity: string | null;
           state: string;
-          htmlUrl: string;
         }[];
       };
     };
@@ -172,7 +170,7 @@ describe("security_alerts tool", () => {
     expect(dep1?.severity).toBe("critical");
     expect(dep1?.package).toBe("lodash");
     expect(dep1?.summary).toBe("Vuln in lodash");
-    expect(dep1?.htmlUrl).toContain("dependabot/1");
+    expect((dep1 as { htmlUrl?: string }).htmlUrl).toBeUndefined();
 
     // Code Scanning shape
     expect(parsed.codeScanning.enabled).toBe(true);
@@ -182,10 +180,38 @@ describe("security_alerts tool", () => {
     expect(cs1?.number).toBe(10);
     expect(cs1?.ruleId).toBe("js/sql-injection");
     expect(cs1?.severity).toBe("high");
-    expect(cs1?.htmlUrl).toContain("code-scanning/10");
+    expect((cs1 as { htmlUrl?: string }).htmlUrl).toBeUndefined();
     // null-security rule preserved as null in output
     const cs3 = parsed.codeScanning.alerts[2];
     expect(cs3?.severity).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // (f) Markdown format reconstructs per-alert URLs from owner/repo (no
+  //     stored htmlUrl field on the JSON-facing entries).
+  // -------------------------------------------------------------------------
+  test("markdown format reconstructs dependabot/code-scanning URLs from owner/repo", async () => {
+    const spy = spyOn(githubClient, "getOctokit").mockReturnValue(
+      makeOctokitMock({
+        dependabotAlerts: [makeDependabotAlert(7, "high")],
+        codeScanningAlerts: [makeCodeScanningAlert(9, "critical")],
+      }),
+    );
+
+    const text = await run({
+      owner: "o",
+      repo: "r",
+      includeDependabot: true,
+      includeCodeScanning: true,
+      state: "open",
+      limit: 30,
+      format: "markdown",
+    });
+
+    spy.mockRestore();
+
+    expect(text).toContain("https://github.com/o/r/security/dependabot/7");
+    expect(text).toContain("https://github.com/o/r/security/code-scanning/9");
   });
 
   // -------------------------------------------------------------------------

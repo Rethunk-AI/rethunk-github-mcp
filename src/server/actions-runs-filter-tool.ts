@@ -12,7 +12,6 @@ export interface WorkflowRun {
   conclusion: string | null;
   branch: string;
   createdAt: string;
-  url: string;
 }
 
 export interface ActionsRunsFilterResult {
@@ -43,10 +42,10 @@ export function registerActionsRunsFilterTool(server: FastMCP): void {
         .number()
         .int()
         .min(1)
-        .max(500)
+        .max(200)
         .optional()
         .default(20)
-        .describe("Maximum number of runs to return (default 20, max 500)."),
+        .describe("Maximum number of runs to return (default 20, max 200)."),
       format: FormatSchema,
     }),
     execute: async (args) => {
@@ -128,14 +127,14 @@ export function registerActionsRunsFilterTool(server: FastMCP): void {
             conclusion: run.conclusion,
             branch: run.head_branch ?? "",
             createdAt: run.created_at ?? "",
-            url: run.html_url ?? "",
           })),
           ...(rawTruncatedCount > 0 ? { truncatedCount: rawTruncatedCount } : {}),
         };
 
         if (!args.format || args.format === "json") return jsonRespond(result);
 
-        // Markdown rendering
+        // Markdown rendering — html_url is reconstructed here (not stored in
+        // the JSON-facing WorkflowRun) since owner/repo are in scope.
         const lines: string[] = ["# Actions Workflow Runs", ""];
         if (result.runs.length === 0) {
           lines.push("*(no runs matched)*");
@@ -143,8 +142,9 @@ export function registerActionsRunsFilterTool(server: FastMCP): void {
           lines.push("| # | Workflow | Status | Conclusion | Branch | Created |");
           lines.push("|---|----------|--------|------------|--------|---------|");
           for (const run of result.runs) {
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${run.id}`;
             lines.push(
-              `| [${run.id}](${run.url}) | ${run.name} | ${run.status} | ${run.conclusion ?? "—"} | ${run.branch} | ${run.createdAt.substring(0, 10)} |`,
+              `| [${run.id}](${runUrl}) | ${run.name} | ${run.status} | ${run.conclusion ?? "—"} | ${run.branch} | ${run.createdAt.substring(0, 10)} |`,
             );
           }
         }

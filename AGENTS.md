@@ -18,7 +18,7 @@ IDEs injecting context: don't re-link from rules.
 | [`src/server.ts`](src/server.ts) | `FastMCP`; `readMcpServerVersion()`; `registerRethunkGitHubTools` |
 | [`src/server/tools.ts`](src/server/tools.ts) | `registerRethunkGitHubTools` — dispatches to `register*` below |
 | [`src/server/roots.ts`](src/server/roots.ts) | `resolveOptionalLocalPath` — normalize MCP workspace roots / localPath overrides |
-| [`src/server/json.ts`](src/server/json.ts) | `MCP_JSON_FORMAT_VERSION="2"`, `jsonRespond()` (minified), `errorRespond`, `mkError`, `mkLocalRepoNoRemote`, `spreadDefined`, `truncateLines`, `truncateText` |
+| [`src/server/json.ts`](src/server/json.ts) | `MCP_JSON_FORMAT_VERSION="3"`, `jsonRespond()` (minified), `errorRespond`, `mkError`, `mkLocalRepoNoRemote`, `spreadDefined`, `truncateLines`, `truncateText` |
 | [`src/server/utils.ts`](src/server/utils.ts) | `timeAgo`, `parseSince`, `extractPRNumbers`, `extractFirstPR`, `tailTruncate`, `CheckNode` (interface), `normalizeFailedChecks` — shared across tool files |
 | [`src/server/schemas.ts`](src/server/schemas.ts) | `FormatSchema`, `RepoRefSchema`, `LocalOrRemoteRepoSchema`, `MaxCommitsSchema`, `MaxLogLinesSchema`, **`MAX_REPOS_PER_REQUEST`** (64; caps `repo_status` / `ecosystem_activity` `repos[]`) |
 | [`src/server/github-auth.ts`](src/server/github-auth.ts) | `gateAuth` (GITHUB_TOKEN → GH_TOKEN → gh CLI), `resetAuthCache` |
@@ -57,7 +57,7 @@ IDEs injecting context: don't re-link from rules.
 
 ## Changing contracts
 
-- **`MCP_JSON_FORMAT_VERSION`** (now `"2"`): bump on incompatible JSON changes.
+- **`MCP_JSON_FORMAT_VERSION`** (now `"3"`): bump on incompatible JSON changes.
 - **Public tool surface:** rename/add/remove → update [docs/mcp-tools.md](docs/mcp-tools.md) + [README.md](README.md) + [HUMANS.md](HUMANS.md) + [AGENTS.md](AGENTS.md).
 - **Auth or mutation-scope changes:** update [docs/install.md](docs/install.md) `env` examples + [SECURITY.md](SECURITY.md) guidance.
 - **Closed backlog items:** remove them from [TODO.md](TODO.md) rather than keeping a shipped-history section.
