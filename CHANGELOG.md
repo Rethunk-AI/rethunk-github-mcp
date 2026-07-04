@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] — 2026-07-04
+
+A second token-cost pass, this time on two per-row/per-job repetitions in
+larger multi-item payloads.
+
+### Breaking Changes
+
+- **`ecosystem_activity`**: JSON `commits[]` entries no longer carry separate `owner` and `repo` fields — merged into a single `repo: "owner/name"` field. (The per-repo `repos[]` summary is unaffected and still reports `owner`/`repo` separately, once per repo rather than once per commit.) `format=markdown` output is unchanged (already rendered `owner/repo` combined).
+- **`ci_diagnosis`**: JSON `failedJobs[]` entries no longer wrap the log in a `failedSteps: [{ name: "logs", log }]` array — `name` was always the literal string `"logs"`, pure repetition with no information. Each entry now has `log` directly: `{ name, conclusion, log }`. `format=markdown` output is unchanged (no more redundant `#### logs` sub-heading per job).
+- **`MCP_JSON_FORMAT_VERSION`** bumped to **`"4"`** to mark this JSON shape change.
+
 ## [2.0.0] — 2026-07-03
 
 A token-cost pass across the tool surface: bounds worst-case payload size,

@@ -52,7 +52,7 @@ This default applies to `repo_status`, `pr_preflight`, `pin_drift`, and `ecosyst
 
 ## JSON responses
 
-Payloads are minified (`JSON.stringify`, no pretty-print). `MCP_JSON_FORMAT_VERSION` is **`"2"`**. Optional fields are omitted when empty/null.
+Payloads are minified (`JSON.stringify`, no pretty-print). `MCP_JSON_FORMAT_VERSION` is **`"4"`**. Optional fields are omitted when empty/null.
 
 ### Error envelope
 
@@ -284,7 +284,7 @@ PR associations are extracted from commit message `(#123)` patterns, then resolv
   "failedJobs": [{
     "name": "build",
     "conclusion": "failure",
-    "failedSteps": [{ "name": "logs", "log": "... [last 150 lines] ..." }]
+    "log": "... [last 150 lines] ..."
   }]
 }
 ```
@@ -416,8 +416,7 @@ The `attention` array is sorted by urgency: failing CI repos first, then by stal
     }
   ],
   "commits": [{
-    "owner": "Rethunk-Tech",
-    "repo": "bastion-satcom",
+    "repo": "Rethunk-Tech/bastion-satcom",
     "sha7": "abc1234",
     "message": "Fix SATCOM reconnect",
     "author": "alice",
@@ -433,6 +432,8 @@ The `attention` array is sorted by urgency: failing CI repos first, then by stal
 ```
 
 Commits are merged across repos and sorted newest-first. Per-repo errors do not fail the batch.
+
+Each commit row's `repo` field is `"owner/name"` (not separate `owner`/`repo` keys as in `repos[]`) — the row identifies its repo once, not twice, since this array can hold up to `64 × 200` entries.
 
 ---
 
