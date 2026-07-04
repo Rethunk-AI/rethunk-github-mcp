@@ -23,6 +23,16 @@ All files                           |   91.05 |   92.03 |
 
     expect(parseAllFilesLineCoverage(output)).toBeUndefined();
   });
+
+  test("extracts line coverage when the row is wrapped in ANSI color codes", () => {
+    // Real `bun test --coverage` output colors each cell; the number sits
+    // between reset/color escapes rather than plain whitespace.
+    const output =
+      "\x1b[0m\x1b[1m\x1b[31mAll files                              \x1b[0m\x1b[2m | " +
+      "\x1b[0m\x1b[1m\x1b[32m  95.61\x1b[0m\x1b[2m | \x1b[0m\x1b[1m\x1b[32m  94.61\x1b[0m\x1b[2m |\x1b[0m";
+
+    expect(parseAllFilesLineCoverage(output)).toBe(94.61);
+  });
 });
 
 describe("assertCoverageThreshold", () => {

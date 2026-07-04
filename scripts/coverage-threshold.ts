@@ -34,8 +34,11 @@ export const REGISTERED_TOOL_FILES = [
   "workflow-dispatch-tool",
 ] as const;
 
+const ANSI_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+
 export function parseAllFilesLineCoverage(output: string): number | undefined {
-  const match = output.match(/all files[^\n|]*\|\s*[\d.]+\s*\|\s*([\d.]+)/i);
+  const plain = output.replace(ANSI_PATTERN, "");
+  const match = plain.match(/all files[^\n|]*\|\s*[\d.]+\s*\|\s*([\d.]+)/i);
   if (!match?.[1]) return undefined;
 
   return Number.parseFloat(match[1]);
