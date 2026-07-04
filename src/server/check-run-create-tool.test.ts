@@ -72,7 +72,7 @@ describe("check_run_create tool", () => {
     const parsed = JSON.parse(text) as { error?: { code: string } };
 
     // Should return validation error for missing conclusion
-    if (!parsed.error || parsed.error.code !== "AUTH_MISSING") {
+    if (parsed.error?.code !== "AUTH_MISSING") {
       if (parsed.error) {
         expect(parsed.error.code).toBe("VALIDATION");
       }
@@ -109,7 +109,7 @@ describe("check_run_create tool", () => {
       url?: string;
     };
 
-    if (!parsed.error || parsed.error.code !== "AUTH_MISSING") {
+    if (parsed.error?.code !== "AUTH_MISSING") {
       if (!parsed.error && parsed.id !== undefined) {
         expect(typeof parsed.id).toBe("number");
         expect(typeof parsed.url).toBe("string");

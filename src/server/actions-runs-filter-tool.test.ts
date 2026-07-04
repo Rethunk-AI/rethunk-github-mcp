@@ -65,7 +65,7 @@ describe("actions_runs_filter tool", () => {
       };
 
       // If no auth error
-      if (!parsed.error || parsed.error.code !== "AUTH_MISSING") {
+      if (parsed.error?.code !== "AUTH_MISSING") {
         if (parsed.runs !== undefined) {
           expect(Array.isArray(parsed.runs)).toBe(true);
           if (parsed.runs.length > 0) {
