@@ -39,7 +39,6 @@ interface HistoryQueryResult {
 }
 
 interface EcosystemCommit {
-  owner: string;
   repo: string;
   sha7: string;
   message: string;
@@ -137,8 +136,7 @@ async function fetchRepoCommits(
   const commits: EcosystemCommit[] = filtered.slice(0, maxCommits).map((n) => {
     const prNum = extractFirstPR(n.messageHeadline);
     return {
-      owner,
-      repo,
+      repo: `${owner}/${repo}`,
       sha7: sha7(n.oid),
       message: n.messageHeadline,
       author: n.author.user?.login ?? n.author.name ?? "unknown",
@@ -285,9 +283,7 @@ export function registerEcosystemActivityTool(server: FastMCP): void {
           const date = c.date.substring(0, 10);
           const msg = truncateText(c.message, 70);
           const prSuffix = c.pr ? ` (#${c.pr.number})` : "";
-          lines.push(
-            `| ${date} | ${c.owner}/${c.repo} | \`${c.sha7}\` | ${msg}${prSuffix} | ${c.author} |`,
-          );
+          lines.push(`| ${date} | ${c.repo} | \`${c.sha7}\` | ${msg}${prSuffix} | ${c.author} |`);
         }
       }
 

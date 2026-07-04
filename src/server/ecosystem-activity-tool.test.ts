@@ -139,12 +139,11 @@ describe("ecosystem_activity with mocked GraphQL", () => {
     spy.mockRestore();
 
     const parsed = JSON.parse(text) as {
-      commits: Array<{ owner: string; repo: string; author: string; pr: unknown }>;
+      commits: Array<{ repo: string; author: string; pr: unknown }>;
       summary: { totalCommits: number };
     };
     expect(parsed.summary.totalCommits).toBe(1);
-    expect(parsed.commits[0]?.owner).toBe("Acme");
-    expect(parsed.commits[0]?.repo).toBe("svc");
+    expect(parsed.commits[0]?.repo).toBe("Acme/svc");
     expect(parsed.commits[0]?.author).toBe("pat");
     expect(parsed.commits[0]?.pr).toEqual({ number: 77 });
   });
