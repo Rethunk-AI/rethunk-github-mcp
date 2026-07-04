@@ -84,14 +84,14 @@ describe("ci_diagnosis tool (mocked)", () => {
       runId: number;
       workflow: string;
       conclusion: string;
-      failedJobs: Array<{ name: string; conclusion: string; failedSteps: Array<{ log: string }> }>;
+      failedJobs: Array<{ name: string; conclusion: string; log: string }>;
     };
 
     expect(parsed.runId).toBe(9001);
     expect(parsed.conclusion).toBe("failure");
     expect(parsed.failedJobs).toHaveLength(1);
     expect(parsed.failedJobs[0]?.name).toBe("Unit Tests");
-    expect(parsed.failedJobs[0]?.failedSteps[0]?.log).toContain("Error:");
+    expect(parsed.failedJobs[0]?.log).toContain("Error:");
   });
 
   test("passing run does not populate failedJobs section in markdown", async () => {
@@ -217,10 +217,10 @@ describe("ci_diagnosis tool (mocked)", () => {
 
     const parsed = JSON.parse(text) as {
       runId: number;
-      failedJobs: Array<{ failedSteps: Array<{ log: string }> }>;
+      failedJobs: Array<{ log: string }>;
     };
     expect(parsed.runId).toBe(1002);
-    expect(parsed.failedJobs[0]?.failedSteps[0]?.log).toBe("[logs unavailable]");
+    expect(parsed.failedJobs[0]?.log).toBe("[logs unavailable]");
   });
 
   test("outer catch: classifyError response when getWorkflowRun throws", async () => {

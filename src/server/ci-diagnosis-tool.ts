@@ -6,15 +6,10 @@ import { errorRespond, jsonRespond, mkError } from "./json.js";
 import { FormatSchema, MaxLogLinesSchema, RepoRefSchema } from "./schemas.js";
 import { isFailed, sha7, tailTruncate } from "./utils.js";
 
-interface FailedStep {
-  name: string;
-  log: string;
-}
-
 interface FailedJob {
   name: string;
   conclusion: string;
-  failedSteps: FailedStep[];
+  log: string;
 }
 
 interface DiagnosisResult {
@@ -159,7 +154,7 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
           failedJobs.push({
             name: job.name,
             conclusion: job.conclusion ?? "unknown",
-            failedSteps: [{ name: "logs", log: logText }],
+            log: logText,
           });
         }
 
@@ -194,10 +189,7 @@ export function registerCiDiagnosisTool(server: FastMCP): void {
         } else {
           lines.push("## Failed Jobs", "");
           for (const job of failedJobs) {
-            lines.push(`### ${job.name} (${job.conclusion})`, "");
-            for (const step of job.failedSteps) {
-              lines.push(`#### ${step.name}`, "", "```", step.log, "```", "");
-            }
+            lines.push(`### ${job.name} (${job.conclusion})`, "", "```", job.log, "```", "");
           }
         }
 
