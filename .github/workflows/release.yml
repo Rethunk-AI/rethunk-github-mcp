@@ -33,7 +33,7 @@ jobs:
       run: bun install --frozen-lockfile
 
     - name: CI gate
-      run: bun run ci
+      run: bun run ci:release
 
     - name: Unit tests with coverage
       env:
