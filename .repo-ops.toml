@@ -1,0 +1,3 @@
+# Lean verify for repo-ops apply/plan (full `ci` remains for GitHub Actions).
+[verify]
+script = "ci:fast"
