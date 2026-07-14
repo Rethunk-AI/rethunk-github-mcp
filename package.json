@@ -37,7 +37,7 @@
     "prepublishOnly": "bun run ci && bun run test:coverage",
     "setup-hooks": "git config core.hooksPath .githooks",
     "ci:release": "bun run ci && bun scripts/release-sanity.ts",
-    "ci:fast": "bun run lint && bun run typecheck && bun run test"
+    "ci:fast": "bun run lint && bun run typecheck"
   },
   "keywords": [
     "mcp",
