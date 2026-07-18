@@ -1,7 +1,7 @@
 {
   "name": "@rethunk/github-mcp",
   "version": "3.0.0",
-  "description": "MCP stdio server: high-value GitHub rollup tools for LLMs \u2014 multi-repo dashboards, PR preflight, CI diagnosis, and more.",
+  "description": "MCP stdio server: high-value GitHub rollup tools for LLMs — multi-repo dashboards, PR preflight, CI diagnosis, and more.",
   "type": "module",
   "private": false,
   "packageManager": "bun@1.3.14",
@@ -63,11 +63,11 @@
   "dependencies": {
     "@octokit/graphql": "^9.0.3",
     "@octokit/rest": "^22.0.1",
-    "fastmcp": "^4.4.0",
+    "fastmcp": "^4.7.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.3",
+    "@biomejs/biome": "^2.5.4",
     "@types/node": "^26.1.1",
     "rimraf": "^6.1.3",
     "typescript": "^7.0.2"
