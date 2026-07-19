@@ -93,7 +93,7 @@ export async function asyncPool<T, R>(
 }
 
 // Clamp to >= 1 so a non-numeric env value (NaN) falls back to 4, not Infinity.
-export const GITHUB_API_PARALLELISM = Math.max(
+export const GITHUB_API_PARALLELISM: number = Math.max(
   1,
   Number.parseInt(process.env.GITHUB_API_PARALLELISM ?? "", 10) || 4,
 );
@@ -300,7 +300,7 @@ export async function withRetry<T>(
  * Default request timeout in milliseconds.
  * Overridden by `GITHUB_API_TIMEOUT_MS` env var.
  */
-export const GITHUB_API_TIMEOUT_MS = (() => {
+export const GITHUB_API_TIMEOUT_MS: number = (() => {
   const parsed = Number.parseInt(process.env.GITHUB_API_TIMEOUT_MS ?? "", 10);
   return Number.isNaN(parsed) ? 30_000 : Math.max(0, parsed);
 })();
