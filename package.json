@@ -73,11 +73,15 @@
     "typescript": "^7.0.2"
   },
   "overrides": {
-    "@hono/node-server": "^2.0.3",
-    "hono": "^4.12.22",
-    "fast-uri": "^3.1.2",
-    "ip-address": "^10.2.0",
-    "axios": "^1.16.1",
-    "follow-redirects": "^1.16.0"
+    "qs": "6.15.3",
+    "@hono/node-server": "2.1.0",
+    "body-parser": "2.3.0",
+    "brace-expansion": "5.0.9",
+    "ip-address": "10.4.0",
+    "undici": "^7.29.0",
+    "form-data": "4.0.6",
+    "fast-uri": "^3.1.5",
+    "axios": "1.19.0",
+    "hono": "4.13.1"
   }
 }
