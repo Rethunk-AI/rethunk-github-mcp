@@ -63,12 +63,12 @@
   "dependencies": {
     "@octokit/graphql": "^9.0.4",
     "@octokit/rest": "^22.0.1",
-    "fastmcp": "^4.12.6",
+    "fastmcp": "^4.14.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.7",
-    "@types/node": "^26.1.2",
+    "@types/node": "^26.2.0",
     "rimraf": "^6.1.3",
     "typescript": "^7.0.2"
   },
