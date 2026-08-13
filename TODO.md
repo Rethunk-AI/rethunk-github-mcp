@@ -42,12 +42,6 @@ additive enhancement sweep deliberately; they need an explicit go/no-go.
 
 **Ask:** accept `repos[]` on the single-repo read tools. Breaking because the top-level result becomes an array (or `{ repos: [...] }`) instead of a single object — decide whether to preserve the single-object shape when exactly one repo is passed, or bump the format version.
 
-### Standardize the error-envelope nesting convention
-
-**Current state:** tool-level failures return a top-level `{ error: {...} }`. Bulk tools (`repo_status`, `ecosystem_activity`) additionally carry a per-item `error` inside each repo result. The two patterns are not documented as a single rule.
-
-**Ask:** ratify and document the convention — top-level `error` = whole-tool failure; nested `error` = per-item failure in a bulk result — and align any tool that diverges. Breaking only if any tool's current shape changes.
-
 ## Low value — nice to have
 
 ### `pr_comment_batch` — side and range support
