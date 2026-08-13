@@ -7,9 +7,24 @@ import {
   fetchPRMetadata,
   getOctokit,
   graphqlQuery,
+  parallelApi,
+  resolveLocalRepoRemote,
 } from "./github-client.js";
-import { errorRespond, jsonRespond, mkError, truncateText } from "./json.js";
-import { FormatSchema, MaxCommitsSchema, RepoRefSchema } from "./schemas.js";
+import {
+  errorRespond,
+  jsonRespond,
+  type McpErrorEnvelope,
+  mkError,
+  mkLocalRepoNoRemote,
+  truncateText,
+} from "./json.js";
+import { resolveOptionalLocalPath } from "./roots.js";
+import {
+  FormatSchema,
+  LocalOrRemoteRepoSchema,
+  MAX_REPOS_PER_REQUEST,
+  MaxCommitsSchema,
+} from "./schemas.js";
 import {
   type CheckNode,
   extractPRNumbers,
@@ -32,6 +47,28 @@ export interface ArtifactIntegrity {
   missingFromChecksum: string[];
   checksumAsset?: string;
 }
+
+interface ReleaseReadinessSuccess {
+  owner: string;
+  repo: string;
+  base: string;
+  head: string;
+  aheadBy: number;
+  truncatedCount?: number;
+  headCi: { status: string; failedChecks: { name: string; conclusion: string }[] };
+  commits: CommitForRelease[];
+  stats: { additions: number; deletions: number; changedFiles: number };
+  artifactIntegrity: ArtifactIntegrity;
+  error?: undefined;
+}
+
+interface ReleaseReadinessFailure {
+  owner: string;
+  repo: string;
+  error: McpErrorEnvelope;
+}
+
+type ReleaseReadinessResult = ReleaseReadinessSuccess | ReleaseReadinessFailure;
 
 async function fetchHeadCI(
   owner: string,
@@ -184,14 +221,85 @@ async function checkArtifactIntegrity(
   }
 }
 
+function formatOneReleaseReadiness(r: ReleaseReadinessSuccess): string {
+  const truncatedCount = r.truncatedCount ?? 0;
+  const aheadSuffix =
+    truncatedCount > 0
+      ? ` — list truncated, ${truncatedCount} commit${truncatedCount === 1 ? "" : "s"} not shown`
+      : "";
+  const lines: string[] = [
+    `## ${r.owner}/${r.repo}`,
+    "",
+    `${r.base} → ${r.head} (${r.aheadBy} commits ahead${aheadSuffix})`,
+  ];
+
+  const ciState =
+    r.headCi.status === "success"
+      ? "CI: passing"
+      : r.headCi.status === "not_configured"
+        ? "CI: not configured"
+        : r.headCi.status === "pending" || r.headCi.status === "expected"
+          ? "CI: pending"
+          : `CI: failing (${r.headCi.failedChecks.map((c) => c.name).join(", ")})`;
+  lines.push(ciState);
+
+  if (r.artifactIntegrity.verdict === "ok") {
+    lines.push("Artifacts: integrity verified");
+  } else if (r.artifactIntegrity.verdict === "warn") {
+    const missing =
+      r.artifactIntegrity.missingFromChecksum.length > 0
+        ? ` (${r.artifactIntegrity.missingFromChecksum.length} uncovered)`
+        : "";
+    lines.push(`Artifacts: ⚠ ${r.artifactIntegrity.details}${missing}`);
+  } else {
+    lines.push("Artifacts: skipped");
+  }
+
+  lines.push("");
+
+  if (r.commits.length === 0) {
+    lines.push("*(no commits)*");
+  } else {
+    lines.push("## Unreleased Commits");
+    for (const c of r.commits) {
+      const msg = truncateText(c.message, 72);
+      const pr = c.pr ? ` [#${c.pr.number}]` : "";
+      lines.push(`- \`${c.sha7}\` ${msg}${pr} — ${c.author}`);
+    }
+  }
+
+  lines.push(
+    "",
+    `+${r.stats.additions} −${r.stats.deletions} across ${r.stats.changedFiles} files`,
+  );
+
+  return lines.join("\n");
+}
+
+function formatReleaseReadinessMarkdown(results: ReleaseReadinessResult[]): string {
+  return results
+    .map((r) =>
+      r.error
+        ? `## ${r.owner}/${r.repo}\nError (${r.error.code}): ${r.error.message}`
+        : formatOneReleaseReadiness(r),
+    )
+    .join("\n\n");
+}
+
 export function registerReleaseReadinessTool(server: FastMCP): void {
   server.addTool({
     name: "release_readiness",
     description:
       "Unreleased-commit scope report: compares base..head, lists commits with PRs, CI status on head, and diff stats. " +
-      "Omit `base` to auto-pick the latest semver tag.",
+      `Omit \`base\` to auto-pick the latest semver tag. Accepts up to ${MAX_REPOS_PER_REQUEST} repos; omit repos to use the active MCP workspace root.`,
     annotations: { readOnlyHint: true },
-    parameters: RepoRefSchema.extend({
+    parameters: z.object({
+      repos: z
+        .array(LocalOrRemoteRepoSchema)
+        .min(1)
+        .max(MAX_REPOS_PER_REQUEST)
+        .optional()
+        .describe("Repos to query."),
       base: z
         .string()
         .optional()
@@ -204,166 +312,155 @@ export function registerReleaseReadinessTool(server: FastMCP): void {
       const auth = gateAuth();
       if (!auth.ok) return errorRespond(auth.envelope);
 
-      const octokit = getOctokit();
-      const { owner, repo, maxCommits } = args;
-      let head = args.head;
-      let base = args.base;
-
-      try {
-        if (!head) {
-          const repoData = await octokit.repos.get({ owner, repo });
-          head = repoData.data.default_branch;
-        }
-
-        if (!base) {
-          const fetchedTag = await fetchLatestSemverTag(owner, repo);
-          if (fetchedTag === null) {
-            return errorRespond(
-              mkError(
-                "NOT_FOUND",
-                `No semver tag found in ${owner}/${repo}; pass base explicitly.`,
-                {
-                  suggestedFix: "Create a tag (e.g. v0.1.0) or pass base explicitly.",
-                },
-              ),
-            );
-          }
-          base = fetchedTag;
-        }
-
-        const cmp = await octokit.repos.compareCommitsWithBasehead({
-          owner,
-          repo,
-          basehead: `${base}...${head}`,
-        });
-
-        const aheadBy = cmp.data.ahead_by;
-        const rawCommits = cmp.data.commits.slice(0, maxCommits);
-        // The compare endpoint caps at 250 commits; maxCommits may also truncate the list.
-        // Track how many commits were not shown so we can surface that to the caller.
-        const truncatedCount = aheadBy - rawCommits.length;
-
-        const allPRNumbers = new Set<number>();
-        for (const c of rawCommits) {
-          for (const n of extractPRNumbers(c.commit.message)) allPRNumbers.add(n);
-        }
-
-        const prMap = await fetchPRMetadata(owner, repo, [...allPRNumbers]);
-        const ciStatus = await fetchHeadCI(owner, repo, head);
-
-        const commits: CommitForRelease[] = rawCommits.map((c) => {
-          const prNums = extractPRNumbers(c.commit.message);
-          const firstPR = prNums[0] !== undefined ? prMap.get(prNums[0]) : undefined;
-          return {
-            sha7: sha7(c.sha),
-            message: truncateText(firstLine(c.commit.message), 72),
-            author: c.commit.author?.name ?? c.author?.login ?? "unknown",
-            date: c.commit.author?.date ?? "",
-            ...(firstPR
-              ? {
-                  pr: {
-                    number: firstPR.number,
-                    title: firstPR.title,
-                    labels: firstPR.labels.nodes.map((l) => l.name),
-                  },
-                }
-              : {}),
-          };
-        });
-
-        const stats = {
-          additions: (cmp.data.files ?? []).reduce((s, f) => s + f.additions, 0),
-          deletions: (cmp.data.files ?? []).reduce((s, f) => s + f.deletions, 0),
-          changedFiles: cmp.data.files?.length ?? 0,
-        };
-
-        // Check artifact integrity if the base ref is a release tag
-        let artifactIntegrity: ArtifactIntegrity | undefined;
-        try {
-          const releaseRes = await octokit.repos.getReleaseByTag({ owner, repo, tag: base });
-          artifactIntegrity = await checkArtifactIntegrity(owner, repo, releaseRes.data.id, base);
-        } catch (_err) {
-          // base is not a release tag, or API error — skip integrity check
-          artifactIntegrity = {
-            verdict: "skip",
-            details: "Base ref is not a release tag",
-            missingFromChecksum: [],
-          };
-        }
-
-        const result = {
-          base,
-          head,
-          aheadBy,
-          truncatedCount: truncatedCount > 0 ? truncatedCount : undefined,
-          headCi: ciStatus,
-          commits,
-          stats,
-          artifactIntegrity,
-        };
-
-        if (args.format === "json") return jsonRespond(result);
-
-        // Markdown — compact single-line list instead of full table
-        const aheadSuffix =
-          truncatedCount > 0
-            ? ` — list truncated, ${truncatedCount} commit${truncatedCount === 1 ? "" : "s"} not shown`
-            : "";
-        const lines: string[] = [
-          `# Release Readiness: ${owner}/${repo}`,
-          "",
-          `${base} → ${head} (${aheadBy} commits ahead${aheadSuffix})`,
-        ];
-
-        const ciState =
-          ciStatus.status === "success"
-            ? "CI: passing"
-            : ciStatus.status === "not_configured"
-              ? "CI: not configured"
-              : ciStatus.status === "pending" || ciStatus.status === "expected"
-                ? "CI: pending"
-                : `CI: failing (${ciStatus.failedChecks.map((c) => c.name).join(", ")})`;
-        lines.push(ciState);
-
-        // Add artifact integrity status
-        if (artifactIntegrity.verdict === "ok") {
-          lines.push("Artifacts: integrity verified");
-        } else if (artifactIntegrity.verdict === "warn") {
-          const missing =
-            artifactIntegrity.missingFromChecksum.length > 0
-              ? ` (${artifactIntegrity.missingFromChecksum.length} uncovered)`
-              : "";
-          lines.push(`Artifacts: ⚠ ${artifactIntegrity.details}${missing}`);
-        } else {
-          lines.push("Artifacts: skipped");
-        }
-
-        lines.push("");
-
-        if (commits.length === 0) {
-          lines.push("*(no commits)*");
-        } else {
-          lines.push("## Unreleased Commits");
-          for (const c of commits) {
-            const msg = truncateText(c.message, 72);
-            const pr = c.pr ? ` [#${c.pr.number}]` : "";
-            lines.push(`- \`${c.sha7}\` ${msg}${pr} — ${c.author}`);
-          }
-        }
-
-        lines.push(
-          "",
-          `+${stats.additions} −${stats.deletions} across ${stats.changedFiles} files`,
+      const defaultLocalPath = resolveOptionalLocalPath(server);
+      const repoRefs = args.repos ?? (defaultLocalPath ? [{ localPath: defaultLocalPath }] : []);
+      if (repoRefs.length === 0) {
+        return errorRespond(
+          mkError("VALIDATION", "No repository target provided and no MCP workspace root found.", {
+            suggestedFix:
+              "Open a workspace folder or pass repos: [{ owner, repo }] / [{ localPath }].",
+          }),
         );
-
-        return lines.join("\n");
-      } catch (err) {
-        console.error(
-          `[release_readiness] Failed to generate release readiness report for ${owner}/${repo}:`,
-          err instanceof Error ? err.message : String(err),
-        );
-        return errorRespond(classifyError(err));
       }
+
+      const octokit = getOctokit();
+      const { maxCommits } = args;
+
+      const results = await parallelApi<(typeof repoRefs)[number], ReleaseReadinessResult>(
+        repoRefs,
+        async (repoRef) => {
+          let owner: string;
+          let repo: string;
+
+          if ("localPath" in repoRef) {
+            const localPath =
+              resolveOptionalLocalPath(server, repoRef.localPath) ?? repoRef.localPath;
+            const resolved = resolveLocalRepoRemote(localPath);
+            if (!resolved) {
+              return { owner: "unknown", repo: localPath, error: mkLocalRepoNoRemote(localPath) };
+            }
+            owner = resolved.owner;
+            repo = resolved.repo;
+          } else {
+            owner = repoRef.owner;
+            repo = repoRef.repo;
+          }
+
+          let head = args.head;
+          let base = args.base;
+
+          try {
+            if (!head) {
+              const repoData = await octokit.repos.get({ owner, repo });
+              head = repoData.data.default_branch;
+            }
+
+            if (!base) {
+              const fetchedTag = await fetchLatestSemverTag(owner, repo);
+              if (fetchedTag === null) {
+                return {
+                  owner,
+                  repo,
+                  error: mkError(
+                    "NOT_FOUND",
+                    `No semver tag found in ${owner}/${repo}; pass base explicitly.`,
+                    { suggestedFix: "Create a tag (e.g. v0.1.0) or pass base explicitly." },
+                  ),
+                };
+              }
+              base = fetchedTag;
+            }
+
+            const cmp = await octokit.repos.compareCommitsWithBasehead({
+              owner,
+              repo,
+              basehead: `${base}...${head}`,
+            });
+
+            const aheadBy = cmp.data.ahead_by;
+            const rawCommits = cmp.data.commits.slice(0, maxCommits);
+            // The compare endpoint caps at 250 commits; maxCommits may also truncate the list.
+            // Track how many commits were not shown so we can surface that to the caller.
+            const truncatedCount = aheadBy - rawCommits.length;
+
+            const allPRNumbers = new Set<number>();
+            for (const c of rawCommits) {
+              for (const n of extractPRNumbers(c.commit.message)) allPRNumbers.add(n);
+            }
+
+            const prMap = await fetchPRMetadata(owner, repo, [...allPRNumbers]);
+            const ciStatus = await fetchHeadCI(owner, repo, head);
+
+            const commits: CommitForRelease[] = rawCommits.map((c) => {
+              const prNums = extractPRNumbers(c.commit.message);
+              const firstPR = prNums[0] !== undefined ? prMap.get(prNums[0]) : undefined;
+              return {
+                sha7: sha7(c.sha),
+                message: truncateText(firstLine(c.commit.message), 72),
+                author: c.commit.author?.name ?? c.author?.login ?? "unknown",
+                date: c.commit.author?.date ?? "",
+                ...(firstPR
+                  ? {
+                      pr: {
+                        number: firstPR.number,
+                        title: firstPR.title,
+                        labels: firstPR.labels.nodes.map((l) => l.name),
+                      },
+                    }
+                  : {}),
+              };
+            });
+
+            const stats = {
+              additions: (cmp.data.files ?? []).reduce((s, f) => s + f.additions, 0),
+              deletions: (cmp.data.files ?? []).reduce((s, f) => s + f.deletions, 0),
+              changedFiles: cmp.data.files?.length ?? 0,
+            };
+
+            // Check artifact integrity if the base ref is a release tag
+            let artifactIntegrity: ArtifactIntegrity;
+            try {
+              const releaseRes = await octokit.repos.getReleaseByTag({ owner, repo, tag: base });
+              artifactIntegrity = await checkArtifactIntegrity(
+                owner,
+                repo,
+                releaseRes.data.id,
+                base,
+              );
+            } catch (_err) {
+              // base is not a release tag, or API error — skip integrity check
+              artifactIntegrity = {
+                verdict: "skip",
+                details: "Base ref is not a release tag",
+                missingFromChecksum: [],
+              };
+            }
+
+            return {
+              owner,
+              repo,
+              base,
+              head,
+              aheadBy,
+              truncatedCount: truncatedCount > 0 ? truncatedCount : undefined,
+              headCi: ciStatus,
+              commits,
+              stats,
+              artifactIntegrity,
+            };
+          } catch (err) {
+            console.error(
+              `[release_readiness] Failed to generate release readiness report for ${owner}/${repo}:`,
+              err instanceof Error ? err.message : String(err),
+            );
+            return { owner, repo, error: classifyError(err) };
+          }
+        },
+      );
+
+      if (args.format === "json") return jsonRespond({ repos: results });
+
+      return formatReleaseReadinessMarkdown(results);
     },
   });
 }

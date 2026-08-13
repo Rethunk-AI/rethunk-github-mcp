@@ -76,9 +76,9 @@ describe("release_readiness execute body (mocked)", () => {
   //    checksum-ok integrity, JSON output. Covers:
   //    - head auto-pick (repos.get)
   //    - fetchLatestSemverTag spy returning a tag
-  //    - PR number extraction + fetchPRMetadata non-empty Map (263-268)
-  //    - checkArtifactIntegrity ok path (117-161)
-  //    - JSON render
+  //    - PR number extraction + fetchPRMetadata non-empty Map
+  //    - checkArtifactIntegrity ok path
+  //    - JSON render, repos[] envelope
   // -------------------------------------------------------------------------
   test("happy path: auto-pick head+base, PR resolved, CI success, checksum ok (JSON)", async () => {
     const sha = "abc1234567890abcdef1234567890abcdef123456";
@@ -140,8 +140,7 @@ describe("release_readiness execute body (mocked)", () => {
 
     const run = captureTool(registerReleaseReadinessTool);
     const text = await run({
-      owner: "Acme",
-      repo: "svc",
+      repos: [{ owner: "Acme", repo: "svc" }],
       // base and head omitted — auto-pick
       format: "json",
     });
@@ -152,36 +151,43 @@ describe("release_readiness execute body (mocked)", () => {
     graphqlSpy.mockRestore();
 
     const parsed = JSON.parse(text) as {
-      base: string;
-      head: string;
-      aheadBy: number;
-      headCi: { status: string };
-      commits: Array<{ sha7: string; pr?: { number: number; title: string; labels: string[] } }>;
-      stats: { additions: number; deletions: number; changedFiles: number };
-      artifactIntegrity: ArtifactIntegrity;
-      truncatedCount?: number;
+      repos: Array<{
+        owner: string;
+        repo: string;
+        base: string;
+        head: string;
+        aheadBy: number;
+        headCi: { status: string };
+        commits: Array<{ sha7: string; pr?: { number: number; title: string; labels: string[] } }>;
+        stats: { additions: number; deletions: number; changedFiles: number };
+        artifactIntegrity: ArtifactIntegrity;
+        truncatedCount?: number;
+      }>;
     };
 
-    expect(parsed.base).toBe("v2.0.0");
-    expect(parsed.head).toBe("main");
-    expect(parsed.aheadBy).toBe(1);
-    expect(parsed.headCi.status).toBe("success");
-    expect(parsed.commits).toHaveLength(1);
+    expect(parsed.repos).toHaveLength(1);
+    const entry = parsed.repos[0];
+    if (!entry) throw new Error("Expected repos[0]");
+    expect(entry.owner).toBe("Acme");
+    expect(entry.repo).toBe("svc");
+    expect(entry.base).toBe("v2.0.0");
+    expect(entry.head).toBe("main");
+    expect(entry.aheadBy).toBe(1);
+    expect(entry.headCi.status).toBe("success");
+    expect(entry.commits).toHaveLength(1);
     // PR metadata was resolved and merged into the commit
-    expect(parsed.commits[0].pr?.number).toBe(7);
-    expect(parsed.commits[0].pr?.labels).toEqual(["enhancement"]);
-    expect(parsed.stats.additions).toBe(20);
-    expect(parsed.stats.deletions).toBe(5);
+    expect(entry.commits[0]?.pr?.number).toBe(7);
+    expect(entry.commits[0]?.pr?.labels).toEqual(["enhancement"]);
+    expect(entry.stats.additions).toBe(20);
+    expect(entry.stats.deletions).toBe(5);
     // Checksum "ok" — all assets covered
-    expect(parsed.artifactIntegrity.verdict).toBe("ok");
-    expect(parsed.artifactIntegrity.checksumAsset).toBe("SHA256SUMS");
-    expect(parsed.truncatedCount).toBeUndefined();
+    expect(entry.artifactIntegrity.verdict).toBe("ok");
+    expect(entry.artifactIntegrity.checksumAsset).toBe("SHA256SUMS");
+    expect(entry.truncatedCount).toBeUndefined();
   });
 
   // -------------------------------------------------------------------------
   // B: CI pending + assets without checksum file → markdown output.
-  //    Covers: 108-114 (no checksum asset found → warn), 323-324 (pending CI
-  //    markdown branch), markdown render for artifacts warn.
   // -------------------------------------------------------------------------
   test("pending CI + no checksum asset → markdown shows pending and artifacts warn", async () => {
     const sha = "bbb1234567890abcdef1234567890abcdef123456";
@@ -228,8 +234,7 @@ describe("release_readiness execute body (mocked)", () => {
 
     const run = captureTool(registerReleaseReadinessTool);
     const text = await run({
-      owner: "Acme",
-      repo: "svc",
+      repos: [{ owner: "Acme", repo: "svc" }],
       base: "v1.5.0",
       head: "main",
       format: "markdown",
@@ -239,6 +244,7 @@ describe("release_readiness execute body (mocked)", () => {
     fetchPRSpy.mockRestore();
     graphqlSpy.mockRestore();
 
+    expect(text).toContain("## Acme/svc");
     expect(text).toContain("CI: pending");
     expect(text).toContain("Artifacts:");
     // warn path — "No checksum asset found"
@@ -249,7 +255,6 @@ describe("release_readiness execute body (mocked)", () => {
 
   // -------------------------------------------------------------------------
   // C: Zero commits + failing CI → markdown shows "(no commits)" and failing.
-  //    Covers: 344 (no commits markdown path), failing CI branch in markdown.
   // -------------------------------------------------------------------------
   test("zero commits + failing CI → markdown shows no-commits and CI failing", async () => {
     const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
@@ -285,8 +290,7 @@ describe("release_readiness execute body (mocked)", () => {
 
     const run = captureTool(registerReleaseReadinessTool);
     const text = await run({
-      owner: "Acme",
-      repo: "svc",
+      repos: [{ owner: "Acme", repo: "svc" }],
       base: "v1.0.0",
       head: "main",
       format: "markdown",
@@ -347,8 +351,7 @@ describe("release_readiness execute body (mocked)", () => {
 
     const run = captureTool(registerReleaseReadinessTool);
     const text = await run({
-      owner: "Acme",
-      repo: "svc",
+      repos: [{ owner: "Acme", repo: "svc" }],
       base: "v1.0.0",
       head: "main",
       format: "json",
@@ -358,16 +361,17 @@ describe("release_readiness execute body (mocked)", () => {
     fetchPRSpy.mockRestore();
     graphqlSpy.mockRestore();
 
-    const parsed = JSON.parse(text) as { commits: Array<{ message: string }> };
-    expect(parsed.commits[0].message).toBe(`${longSubject.slice(0, 72)}… [truncated]`);
-    expect(parsed.commits[0].message).not.toContain("Extended body text");
+    const parsed = JSON.parse(text) as { repos: Array<{ commits: Array<{ message: string }> }> };
+    expect(parsed.repos[0]?.commits[0]?.message).toBe(`${longSubject.slice(0, 72)}… [truncated]`);
+    expect(parsed.repos[0]?.commits[0]?.message).not.toContain("Extended body text");
   });
 
   // -------------------------------------------------------------------------
-  // D: fetchLatestSemverTag returns null → NOT_FOUND error envelope.
-  //    Covers: 221-229.
+  // D: fetchLatestSemverTag returns null → per-repo NOT_FOUND error (batch
+  //    itself still succeeds — a single repo's base-resolution failure is a
+  //    per-item error, not a whole-tool failure).
   // -------------------------------------------------------------------------
-  test("no semver tag found → NOT_FOUND error", async () => {
+  test("no semver tag found → per-repo NOT_FOUND error", async () => {
     const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
       repos: {
         get: async () => ({ data: { default_branch: "main" } }),
@@ -378,8 +382,7 @@ describe("release_readiness execute body (mocked)", () => {
 
     const run = captureTool(registerReleaseReadinessTool);
     const text = await run({
-      owner: "Acme",
-      repo: "svc",
+      repos: [{ owner: "Acme", repo: "svc" }],
       // base omitted — auto-pick will get null
       format: "json",
     });
@@ -387,13 +390,20 @@ describe("release_readiness execute body (mocked)", () => {
     octokitSpy.mockRestore();
     latestTagSpy.mockRestore();
 
-    const parsed = JSON.parse(text) as { error: { code: string; suggestedFix?: string } };
-    expect(parsed.error.code).toBe("NOT_FOUND");
+    const parsed = JSON.parse(text) as {
+      repos: Array<{
+        owner: string;
+        repo: string;
+        error?: { code: string; suggestedFix?: string };
+      }>;
+    };
+    expect(parsed.repos[0]?.error?.code).toBe("NOT_FOUND");
+    expect(parsed.repos[0]?.owner).toBe("Acme");
+    expect(parsed.repos[0]?.repo).toBe("svc");
   });
 
   // -------------------------------------------------------------------------
   // E: getReleaseAsset throws (parse-error path inside checkArtifactIntegrity).
-  //    Covers: 162-172.
   // -------------------------------------------------------------------------
   test("getReleaseAsset throws → artifactIntegrity warn with parse-fail details", async () => {
     const sha = "ccc1234567890abcdef1234567890abcdef123456";
@@ -438,8 +448,7 @@ describe("release_readiness execute body (mocked)", () => {
 
     const run = captureTool(registerReleaseReadinessTool);
     const text = await run({
-      owner: "Acme",
-      repo: "svc",
+      repos: [{ owner: "Acme", repo: "svc" }],
       base: "v3.0.0",
       head: "main",
       format: "json",
@@ -450,16 +459,15 @@ describe("release_readiness execute body (mocked)", () => {
     graphqlSpy.mockRestore();
 
     const parsed = JSON.parse(text) as {
-      artifactIntegrity: ArtifactIntegrity;
+      repos: Array<{ artifactIntegrity: ArtifactIntegrity }>;
     };
-    expect(parsed.artifactIntegrity.verdict).toBe("warn");
-    expect(parsed.artifactIntegrity.details).toContain("Failed to parse checksum file");
-    expect(parsed.artifactIntegrity.checksumAsset).toBe("SHA256SUMS");
+    expect(parsed.repos[0]?.artifactIntegrity.verdict).toBe("warn");
+    expect(parsed.repos[0]?.artifactIntegrity.details).toContain("Failed to parse checksum file");
+    expect(parsed.repos[0]?.artifactIntegrity.checksumAsset).toBe("SHA256SUMS");
   });
 
   // -------------------------------------------------------------------------
   // F: listReleaseAssets throws (outer catch in checkArtifactIntegrity).
-  //    Covers: 174-182.
   // -------------------------------------------------------------------------
   test("listReleaseAssets throws → artifactIntegrity warn with error details", async () => {
     const sha = "ddd1234567890abcdef1234567890abcdef123456";
@@ -498,8 +506,7 @@ describe("release_readiness execute body (mocked)", () => {
 
     const run = captureTool(registerReleaseReadinessTool);
     const text = await run({
-      owner: "Acme",
-      repo: "svc",
+      repos: [{ owner: "Acme", repo: "svc" }],
       base: "v4.0.0",
       head: "main",
       format: "json",
@@ -510,16 +517,15 @@ describe("release_readiness execute body (mocked)", () => {
     graphqlSpy.mockRestore();
 
     const parsed = JSON.parse(text) as {
-      artifactIntegrity: ArtifactIntegrity;
+      repos: Array<{ artifactIntegrity: ArtifactIntegrity }>;
     };
-    expect(parsed.artifactIntegrity.verdict).toBe("warn");
-    expect(parsed.artifactIntegrity.details).toContain("Error checking integrity");
-    expect(parsed.artifactIntegrity.details).toContain("asset listing failed");
+    expect(parsed.repos[0]?.artifactIntegrity.verdict).toBe("warn");
+    expect(parsed.repos[0]?.artifactIntegrity.details).toContain("Error checking integrity");
+    expect(parsed.repos[0]?.artifactIntegrity.details).toContain("asset listing failed");
   });
 
   // -------------------------------------------------------------------------
   // G: graphqlQuery rejects after fetchPRMetadata is spied → fetchHeadCI error.
-  //    Covers: 64-69 (catch block → status: "error_fetching").
   // -------------------------------------------------------------------------
   test("graphqlQuery rejects in fetchHeadCI → headCi.status is error_fetching", async () => {
     const sha = "eee1234567890abcdef1234567890abcdef123456";
@@ -559,8 +565,7 @@ describe("release_readiness execute body (mocked)", () => {
 
     const run = captureTool(registerReleaseReadinessTool);
     const text = await run({
-      owner: "Acme",
-      repo: "svc",
+      repos: [{ owner: "Acme", repo: "svc" }],
       base: "v1.0.0",
       head: "main",
       format: "json",
@@ -571,17 +576,17 @@ describe("release_readiness execute body (mocked)", () => {
     graphqlSpy.mockRestore();
 
     const parsed = JSON.parse(text) as {
-      headCi: { status: string; failedChecks: unknown[] };
+      repos: Array<{ headCi: { status: string; failedChecks: unknown[] } }>;
     };
-    expect(parsed.headCi.status).toBe("error_fetching");
-    expect(parsed.headCi.failedChecks).toHaveLength(0);
+    expect(parsed.repos[0]?.headCi.status).toBe("error_fetching");
+    expect(parsed.repos[0]?.headCi.failedChecks).toHaveLength(0);
   });
 
   // -------------------------------------------------------------------------
-  // H: compareCommitsWithBasehead throws → outer catch → classifyError.
-  //    Covers: 360-364.
+  // H: compareCommitsWithBasehead throws → per-repo classifyError, batch
+  //    itself still returns a `repos[]` envelope rather than a top-level error.
   // -------------------------------------------------------------------------
-  test("compareCommitsWithBasehead throws → classifyError response", async () => {
+  test("compareCommitsWithBasehead throws → per-repo classifyError response", async () => {
     const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
       repos: {
         get: async () => ({ data: { default_branch: "main" } }),
@@ -593,8 +598,7 @@ describe("release_readiness execute body (mocked)", () => {
 
     const run = captureTool(registerReleaseReadinessTool);
     const text = await run({
-      owner: "Acme",
-      repo: "svc",
+      repos: [{ owner: "Acme", repo: "svc" }],
       base: "v1.0.0",
       head: "main",
       format: "json",
@@ -602,15 +606,15 @@ describe("release_readiness execute body (mocked)", () => {
 
     octokitSpy.mockRestore();
 
-    // Should return a classified error envelope
-    const parsed = JSON.parse(text) as { error: { code: string } };
-    expect(typeof parsed.error.code).toBe("string");
-    expect(parsed.error.code.length).toBeGreaterThan(0);
+    const parsed = JSON.parse(text) as { repos: Array<{ error?: { code: string } }> };
+    const entry = parsed.repos[0];
+    if (!entry?.error) throw new Error("Expected repos[0].error");
+    expect(typeof entry.error.code).toBe("string");
+    expect(entry.error.code.length).toBeGreaterThan(0);
   });
 
   // -------------------------------------------------------------------------
   // I: Truncation notice in markdown when aheadBy > listed commits.
-  //    Covers: 309-310 (truncation suffix), 323-324 (not_configured CI markdown).
   // -------------------------------------------------------------------------
   test("markdown shows truncation notice when aheadBy exceeds maxCommits", async () => {
     const sha = "fff1234567890abcdef1234567890abcdef123456";
@@ -648,8 +652,7 @@ describe("release_readiness execute body (mocked)", () => {
 
     const run = captureTool(registerReleaseReadinessTool);
     const text = await run({
-      owner: "Acme",
-      repo: "svc",
+      repos: [{ owner: "Acme", repo: "svc" }],
       base: "v1.0.0",
       head: "main",
       maxCommits: 1,
@@ -666,8 +669,7 @@ describe("release_readiness execute body (mocked)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // J: Checksum file lists all assets → verdict "ok" in markdown (line 330).
-  //    Covers: 97-102 (listReleaseAssets empty → skip) tested via empty assets.
+  // J: listReleaseAssets returns empty → artifactIntegrity skip.
   // -------------------------------------------------------------------------
   test("listReleaseAssets returns empty → artifactIntegrity skip (no assets)", async () => {
     const sha = "aaa1234567890abcdef1234567890abcdef123456";
@@ -709,8 +711,7 @@ describe("release_readiness execute body (mocked)", () => {
 
     const run = captureTool(registerReleaseReadinessTool);
     const text = await run({
-      owner: "Acme",
-      repo: "svc",
+      repos: [{ owner: "Acme", repo: "svc" }],
       base: "v5.0.0",
       head: "main",
       format: "markdown",
@@ -729,7 +730,7 @@ describe("release_readiness execute body (mocked)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // K: Checksum ok path in markdown (line 330: "integrity verified").
+  // K: Checksum ok path in markdown ("integrity verified").
   // -------------------------------------------------------------------------
   test("checksum ok → markdown shows 'Artifacts: integrity verified'", async () => {
     const sha = "bbb9876543210fedcba9876543210fedcba98765";
@@ -779,8 +780,7 @@ describe("release_readiness execute body (mocked)", () => {
 
     const run = captureTool(registerReleaseReadinessTool);
     const text = await run({
-      owner: "Acme",
-      repo: "svc",
+      repos: [{ owner: "Acme", repo: "svc" }],
       base: "v6.0.0",
       head: "main",
       format: "markdown",
@@ -792,5 +792,165 @@ describe("release_readiness execute body (mocked)", () => {
 
     expect(text).toContain("Artifacts: integrity verified");
     expect(text).toContain("CI: passing");
+  });
+
+  // -------------------------------------------------------------------------
+  // L: Multi-repo success — two repos in one request, both resolved from the
+  //    same mocked GitHub client, each entry carrying its own owner/repo.
+  // -------------------------------------------------------------------------
+  test("multi-repo: repos[] with two owner/repo entries both succeed", async () => {
+    const sha = "1112223334445556667778889990001112223334";
+
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      repos: {
+        get: async () => ({ data: { default_branch: "main" } }),
+        compareCommitsWithBasehead: async () => ({
+          data: {
+            ahead_by: 1,
+            commits: [
+              {
+                sha,
+                commit: {
+                  message: "chore: release prep",
+                  author: { name: "Kim", date: "2025-01-09T00:00:00Z" },
+                },
+                author: { login: "kim" },
+              },
+            ],
+            files: [],
+          },
+        }),
+        getReleaseByTag: async () => {
+          throw new Error("not a release");
+        },
+      },
+    } as never);
+
+    const fetchPRSpy = spyOn(githubClient, "fetchPRMetadata").mockResolvedValue(new Map());
+    const graphqlSpy = spyOn(githubClient, "graphqlQuery").mockResolvedValue({
+      repository: { object: { statusCheckRollup: null } },
+    } as never);
+
+    const run = captureTool(registerReleaseReadinessTool);
+    const text = await run({
+      repos: [
+        { owner: "Acme", repo: "svc-one" },
+        { owner: "Acme", repo: "svc-two" },
+      ],
+      base: "v1.0.0",
+      head: "main",
+      format: "json",
+    });
+
+    octokitSpy.mockRestore();
+    fetchPRSpy.mockRestore();
+    graphqlSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as {
+      repos: Array<{ owner: string; repo: string; error?: unknown; aheadBy?: number }>;
+    };
+    expect(parsed.repos).toHaveLength(2);
+    expect(parsed.repos.map((r) => r.repo).sort()).toEqual(["svc-one", "svc-two"]);
+    for (const entry of parsed.repos) {
+      expect(entry.owner).toBe("Acme");
+      expect(entry.error).toBeUndefined();
+      expect(entry.aheadBy).toBe(1);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // M: Per-repo error isolation — one repo's compare call fails while its
+  //    sibling still returns a full result in the same batch.
+  // -------------------------------------------------------------------------
+  test("per-repo error isolation: one repo fails, sibling still returns a result", async () => {
+    const sha = "9998887776665554443332221110009998887776";
+
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      repos: {
+        get: async () => ({ data: { default_branch: "main" } }),
+        compareCommitsWithBasehead: async ({ repo }: { repo: string }) => {
+          if (repo === "broken") throw new Error("compare failed for broken repo");
+          return {
+            data: {
+              ahead_by: 1,
+              commits: [
+                {
+                  sha,
+                  commit: {
+                    message: "fix: works fine",
+                    author: { name: "Lee", date: "2025-01-10T00:00:00Z" },
+                  },
+                  author: { login: "lee" },
+                },
+              ],
+              files: [],
+            },
+          };
+        },
+        getReleaseByTag: async () => {
+          throw new Error("not a release");
+        },
+      },
+    } as never);
+
+    const fetchPRSpy = spyOn(githubClient, "fetchPRMetadata").mockResolvedValue(new Map());
+    const graphqlSpy = spyOn(githubClient, "graphqlQuery").mockResolvedValue({
+      repository: { object: { statusCheckRollup: null } },
+    } as never);
+
+    const run = captureTool(registerReleaseReadinessTool);
+    const text = await run({
+      repos: [
+        { owner: "Acme", repo: "broken" },
+        { owner: "Acme", repo: "healthy" },
+      ],
+      base: "v1.0.0",
+      head: "main",
+      format: "json",
+    });
+
+    octokitSpy.mockRestore();
+    fetchPRSpy.mockRestore();
+    graphqlSpy.mockRestore();
+
+    const parsed = JSON.parse(text) as {
+      error?: { code: string };
+      repos: Array<{ repo: string; error?: { code: string }; aheadBy?: number }>;
+    };
+    // The batch as a whole succeeded — no whole-tool error envelope.
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.repos).toHaveLength(2);
+    const broken = parsed.repos.find((r) => r.repo === "broken");
+    const healthy = parsed.repos.find((r) => r.repo === "healthy");
+    expect(broken?.error?.code).toBeDefined();
+    expect(healthy?.error).toBeUndefined();
+    expect(healthy?.aheadBy).toBe(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // N: Workspace-root fallback — omitting `repos` falls back to the active
+  //    MCP root; a root with no resolvable GitHub remote surfaces as a
+  //    per-repo LOCAL_REPO_NO_REMOTE error, proving the root was consumed.
+  // -------------------------------------------------------------------------
+  test("omitting repos falls back to the workspace root", async () => {
+    const run = captureTool(registerReleaseReadinessTool, undefined, undefined, ["file:///tmp"]);
+    const text = await run({ format: "json" });
+
+    const parsed = JSON.parse(text) as {
+      repos?: Array<{ owner: string; repo: string; error?: { code: string } }>;
+    };
+    expect(parsed.repos).toHaveLength(1);
+    expect(parsed.repos?.[0]?.error?.code).toBe("LOCAL_REPO_NO_REMOTE");
+  });
+
+  // -------------------------------------------------------------------------
+  // O: No repos and no workspace root → whole-tool VALIDATION error.
+  // -------------------------------------------------------------------------
+  test("no repos and no workspace root → VALIDATION error", async () => {
+    const run = captureTool(registerReleaseReadinessTool);
+    const text = await run({ format: "json" });
+
+    const parsed = JSON.parse(text) as { error?: { code: string } };
+    expect(parsed.error?.code).toBe("VALIDATION");
   });
 });
