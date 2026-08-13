@@ -304,4 +304,71 @@ describe("actions_runs_filter tool (mocked)", () => {
     const parsed = JSON.parse(text) as { error: { code: string } };
     expect(parsed.error.code).toBe("NOT_FOUND");
   });
+
+  test("since: forwarded as created with >= prefix", async () => {
+    let capturedParams: { created?: string } | undefined;
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      actions: { listWorkflowRunsForRepo: {} },
+      paginate: {
+        iterator: (_fn: unknown, params: { created?: string }) => {
+          capturedParams = params;
+          return makePaginateIterator([{ total_count: 0, workflow_runs: [] }])();
+        },
+      },
+    } as never);
+
+    const run = captureTool(registerActionsRunsFilterTool);
+    await run({ owner: "Acme", repo: "svc", since: "2026-01-01", limit: 10 });
+    octokitSpy.mockRestore();
+
+    expect(capturedParams?.created).toBe(">=2026-01-01");
+  });
+
+  test("since absent: no created key on params at all", async () => {
+    let capturedParams: { created?: string } | undefined;
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      actions: { listWorkflowRunsForRepo: {} },
+      paginate: {
+        iterator: (_fn: unknown, params: { created?: string }) => {
+          capturedParams = params;
+          return makePaginateIterator([{ total_count: 0, workflow_runs: [] }])();
+        },
+      },
+    } as never);
+
+    const run = captureTool(registerActionsRunsFilterTool);
+    await run({ owner: "Acme", repo: "svc", limit: 10 });
+    octokitSpy.mockRestore();
+
+    expect(capturedParams).toBeDefined();
+    expect("created" in (capturedParams as object)).toBe(false);
+  });
+
+  test("since: relative 7d resolves to an ISO timestamp", async () => {
+    let capturedParams: { created?: string } | undefined;
+    const octokitSpy = spyOn(githubClient, "getOctokit").mockReturnValue({
+      actions: { listWorkflowRunsForRepo: {} },
+      paginate: {
+        iterator: (_fn: unknown, params: { created?: string }) => {
+          capturedParams = params;
+          return makePaginateIterator([{ total_count: 0, workflow_runs: [] }])();
+        },
+      },
+    } as never);
+
+    const run = captureTool(registerActionsRunsFilterTool);
+    await run({ owner: "Acme", repo: "svc", since: "7d", limit: 10 });
+    octokitSpy.mockRestore();
+
+    expect(capturedParams?.created).toMatch(/^>=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  });
+
+  test("since: malformed value returns VALIDATION envelope", async () => {
+    const run = captureTool(registerActionsRunsFilterTool);
+    const text = await run({ owner: "Acme", repo: "svc", since: "2026-13-99", limit: 10 });
+
+    const parsed = JSON.parse(text) as { error?: { code: string; suggestedFix?: string } };
+    expect(parsed.error?.code).toBe("VALIDATION");
+    expect(parsed.error?.suggestedFix).toBeDefined();
+  });
 });

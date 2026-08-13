@@ -2,8 +2,9 @@ import type { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
 import { classifyError, getOctokit } from "./github-client.js";
-import { errorRespond, jsonRespond } from "./json.js";
+import { errorRespond, jsonRespond, mkError } from "./json.js";
 import { FormatSchema } from "./schemas.js";
+import { parseSince } from "./utils.js";
 
 export interface WorkflowRun {
   id: number;
@@ -23,7 +24,7 @@ export function registerActionsRunsFilterTool(server: FastMCP): void {
   server.addTool({
     name: "actions_runs_filter",
     description:
-      "List and filter GitHub Actions workflow runs for a repository. Filter by workflow name, status, conclusion, and branch.",
+      "List and filter GitHub Actions workflow runs for a repository. Filter by workflow name, status, conclusion, branch, and a since time window.",
     annotations: { readOnlyHint: true },
     parameters: z.object({
       owner: z.string().describe("Owner."),
@@ -38,6 +39,12 @@ export function registerActionsRunsFilterTool(server: FastMCP): void {
         .optional()
         .describe("Filter by conclusion: success, failure, or cancelled."),
       branch: z.string().optional().describe("Filter by branch name."),
+      since: z
+        .string()
+        .optional()
+        .describe(
+          'Only runs created at or after this time. ISO-8601 date/datetime, or a relative window like "7d" / "24h".',
+        ),
       limit: z
         .number()
         .int()
@@ -53,8 +60,23 @@ export function registerActionsRunsFilterTool(server: FastMCP): void {
         const auth = gateAuth();
         if (!auth.ok) return errorRespond(auth.envelope);
 
+        const { owner, repo, workflow, status, conclusion, branch, since, limit } = args;
+
+        let sinceIso: string | undefined;
+        if (since) {
+          try {
+            sinceIso = parseSince(since);
+          } catch {
+            return errorRespond(
+              mkError("VALIDATION", `Invalid "since" value: "${since}".`, {
+                suggestedFix:
+                  'Use an ISO-8601 date/datetime (e.g. "2026-01-01" or "2026-01-01T00:00:00Z") or a relative window like "7d" or "24h".',
+              }),
+            );
+          }
+        }
+
         const octokit = getOctokit();
-        const { owner, repo, workflow, status, conclusion, branch, limit } = args;
 
         // Prepare base API call parameters
         type RunsApiParams = Parameters<typeof octokit.actions.listWorkflowRunsForRepo>[0];
@@ -73,6 +95,9 @@ export function registerActionsRunsFilterTool(server: FastMCP): void {
         }
         if (branch) {
           baseParams.head_branch = branch;
+        }
+        if (sinceIso) {
+          baseParams.created = `>=${sinceIso}`;
         }
 
         // Fetch runs via paginated iterator, capping total fetched at `limit`.
