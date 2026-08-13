@@ -52,7 +52,7 @@ This default applies to `repo_status`, `pr_preflight`, `pin_drift`, and `ecosyst
 
 ## JSON responses
 
-Payloads are minified (`JSON.stringify`, no pretty-print). `MCP_JSON_FORMAT_VERSION` is **`"4"`**. Optional fields are omitted when empty/null.
+Payloads are minified (`JSON.stringify`, no pretty-print). `MCP_JSON_FORMAT_VERSION` is **`"5"`**. Optional fields are omitted when empty/null.
 
 ### Error envelope
 
