@@ -20,7 +20,7 @@ IDEs injecting context: don't re-link from rules.
 | [`src/server/roots.ts`](src/server/roots.ts) | `resolveOptionalLocalPath` — normalize MCP workspace roots / localPath overrides |
 | [`src/server/json.ts`](src/server/json.ts) | `MCP_JSON_FORMAT_VERSION="5"`, `jsonRespond()` (minified), `errorRespond`, `mkError`, `mkLocalRepoNoRemote`, `spreadDefined`, `truncateLines`, `truncateText` |
 | [`src/server/utils.ts`](src/server/utils.ts) | `timeAgo`, `parseSince`, `extractPRNumbers`, `extractFirstPR`, `tailTruncate`, `CheckNode` (interface), `normalizeFailedChecks` — shared across tool files |
-| [`src/server/schemas.ts`](src/server/schemas.ts) | `FormatSchema`, `RepoRefSchema`, `LocalOrRemoteRepoSchema`, `MaxCommitsSchema`, `MaxLogLinesSchema`, **`MAX_REPOS_PER_REQUEST`** (64; caps `repo_status` / `ecosystem_activity` `repos[]`) |
+| [`src/server/schemas.ts`](src/server/schemas.ts) | `FormatSchema`, `RepoRefSchema`, `LocalOrRemoteRepoSchema`, `MaxCommitsSchema`, `MaxLogLinesSchema`, **`MAX_REPOS_PER_REQUEST`** (64; caps `repo_status` / `ecosystem_activity` / `changelog_draft` / `release_readiness` `repos[]`) |
 | [`src/server/github-auth.ts`](src/server/github-auth.ts) | `gateAuth` (GITHUB_TOKEN → GH_TOKEN → gh CLI), `resetAuthCache` |
 | [`src/server/github-client.ts`](src/server/github-client.ts) | `getOctokit` (REST), `graphqlQuery` (typed GraphQL), `asyncPool`, `asyncPoolSettled`, `parallelApi`, `parallelApiSettled`, `withRetry`, `withTimeout`, `classifyError`, `parseGitHubRemoteUrl`, `resolveLocalRepoRemote`, `PRNode` (interface), `fetchPRMetadata`, `fetchLatestSemverTag` |
 | [`src/server/repo-status-tool.ts`](src/server/repo-status-tool.ts) | `repo_status` — multi-repo dashboard |
@@ -28,15 +28,15 @@ IDEs injecting context: don't re-link from rules.
 | [`src/server/pr-preflight-tool.ts`](src/server/pr-preflight-tool.ts) | `pr_preflight` — pre-merge safety check |
 | [`src/server/pr-comment-batch-tool.ts`](src/server/pr-comment-batch-tool.ts) | `pr_comment_batch` — submit review + inline comments |
 | [`src/server/pr-create-tool.ts`](src/server/pr-create-tool.ts) | `pr_create` — open a pull request from an existing branch |
-| [`src/server/issue-from-template-tool.ts`](src/server/issue-from-template-tool.ts) | `issue_from_template`; `fetchIssueTemplateDirectory`; `findTemplate`; `fetchIssueTemplateFileContent`; `substituteVariables` |
-| [`src/server/release-readiness-tool.ts`](src/server/release-readiness-tool.ts) | `release_readiness` — what-would-ship-now |
+| [`src/server/issue-from-template-tool.ts`](src/server/issue-from-template-tool.ts) | `issue_from_template`; `fetchIssueTemplateDirectory`; `findTemplate`; `fetchIssueTemplateFileContent`; `substituteVariables` (`.md` path); `parseIssueForm`, `renderIssueForm`, `slugifyLabel`, `IssueFormValidationError` (`.yml`/`.yaml` Issue Forms path) |
+| [`src/server/release-readiness-tool.ts`](src/server/release-readiness-tool.ts) | `release_readiness` — multi-repo what-would-ship-now |
 | [`src/server/release-create-tool.ts`](src/server/release-create-tool.ts) | `release_create` — create a GitHub release |
 | [`src/server/ci-diagnosis-tool.ts`](src/server/ci-diagnosis-tool.ts) | `ci_diagnosis` — why-is-CI-red |
 | [`src/server/org-pulse-tool.ts`](src/server/org-pulse-tool.ts) | `org_pulse` — org-wide activity dashboard |
 | [`src/server/pin-drift-tool.ts`](src/server/pin-drift-tool.ts) | `pin_drift` — upstream pin drift audit |
 | [`src/server/ecosystem-activity-tool.ts`](src/server/ecosystem-activity-tool.ts) | `ecosystem_activity` — cross-repo commit feed |
 | [`src/server/module-pin-hint-tool.ts`](src/server/module-pin-hint-tool.ts) | `module_pin_hint` — Go pseudo-version formatter |
-| [`src/server/changelog-draft-tool.ts`](src/server/changelog-draft-tool.ts) | `changelog_draft` — CHANGELOG.md section from unreleased commits |
+| [`src/server/changelog-draft-tool.ts`](src/server/changelog-draft-tool.ts) | `changelog_draft` — multi-repo CHANGELOG.md sections from unreleased commits |
 | [`src/server/workflow-dispatch-tool.ts`](src/server/workflow-dispatch-tool.ts) | `workflow_dispatch` — trigger GitHub Actions workflow_dispatch |
 | [`src/server/gh-auth-status-tool.ts`](src/server/gh-auth-status-tool.ts) | `gh_auth_status` — auth preflight |
 | [`src/server/actions-runs-filter-tool.ts`](src/server/actions-runs-filter-tool.ts) | `actions_runs_filter` — filter Actions runs |

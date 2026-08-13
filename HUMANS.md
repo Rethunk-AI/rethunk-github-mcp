@@ -77,17 +77,17 @@ Minimal MCP client JSON (server name `rethunk-github`):
 | My open PRs and review queue | `my_work` |
 | Pre-merge safety check | `pr_preflight` |
 | Why is CI red? | `ci_diagnosis` |
-| What would ship if we release now? | `release_readiness` |
+| What would ship if we release now? | `release_readiness` (up to 64 repos per call) |
 | Org-wide failing CI / stale PRs | `org_pulse` |
 | How far are my pins behind upstream? | `pin_drift` |
 | Recent merged commits across repos | `ecosystem_activity` |
 | Go pseudo-version for a commit | `module_pin_hint` |
-| Draft `CHANGELOG.md` from unreleased commits | `changelog_draft` |
+| Draft `CHANGELOG.md` from unreleased commits | `changelog_draft` (up to 64 repos per call) |
 | Confirm current auth state | `gh_auth_status` |
-| Filter Actions runs by branch/workflow | `actions_runs_filter` |
+| Filter Actions runs by branch/workflow/time window | `actions_runs_filter` |
 | Open a pull request from an existing branch | `pr_create` |
 | Submit a single PR review with inline comments | `pr_comment_batch` |
-| Create an issue from `.github/ISSUE_TEMPLATE` | `issue_from_template` |
+| Create an issue from `.github/ISSUE_TEMPLATE` (Markdown or YAML Issue Form) | `issue_from_template` |
 | Create a GitHub release | `release_create` |
 | Trigger `workflow_dispatch` | `workflow_dispatch` |
 | Converge labels to a declared set | `labels_sync` |

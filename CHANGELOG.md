@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **`changelog_draft`**, **`release_readiness`**: replaced top-level `owner`/`repo` with a `repos[]` array (`{ owner, repo }` or `{ localPath }`, 1–`MAX_REPOS_PER_REQUEST`), matching `repo_status` and `ecosystem_activity`. Omit `repos` to use the active MCP workspace root. The JSON result is now always `{ "repos": [...] }` — including for a single repo — with `owner`/`repo` on each entry. A per-repo failure is reported as a nested `error` on that entry and no longer fails the batch; `base`/`head` are resolved independently per repo. `format=markdown` renders one `## owner/repo` section per repo.
+- **`MCP_JSON_FORMAT_VERSION`** bumped to **`"5"`** to mark this JSON shape change.
+
+### Added
+
+- **`actions_runs_filter`**: `since` parameter accepting an ISO-8601 date/datetime or a relative window (`"7d"`, `"24h"`). Applied server-side via GitHub's `created` range filter, so it narrows results before `limit` rather than trimming an already-capped page. A malformed value returns a `VALIDATION` error.
+- **`pr_comment_batch`**: inline comments accept `side`, `startLine`, `startSide`, and `subjectType`, enabling left-side (base) comments, multi-line ranges, and whole-file comments. Omitted fields are not sent, so GitHub's defaults apply and existing single-line right-side calls are unchanged. Invalid combinations are rejected by schema validation.
+- **`issue_from_template`**: `.yml`/`.yaml` templates are parsed as GitHub Issue Forms and rendered structurally — `### <label>` sections in `body[]` order, `markdown` blocks inline, declared defaults falling back to `_No response_`, and `checkboxes` rendered as `- [x]`/`- [ ]`. Variables are keyed by field `id` (or slugified `label`). Unmet `validations.required`, out-of-range `dropdown` values, unknown variable keys, and unparseable YAML surface as `VALIDATION` errors. Form-declared `title`/`labels`/`assignees` merge with caller-supplied values, with an explicit `title` winning. `.md` templates keep the existing mustache substitution path unchanged, and `title` is now optional when the form declares one.
+
 ## [3.0.0] — 2026-07-04
 
 A second token-cost pass, this time on two per-row/per-job repetitions in

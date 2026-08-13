@@ -14,20 +14,20 @@ MCP clients expose tools as `{serverName}_{toolName}`. With the server registere
 | `repo_status` | `rethunk-github_repo_status` | read | Multi-repo dashboard: default branch HEAD, CI, open PRs/issues, latest commit. Up to 64 repos per call; omit `repos` to use the active MCP workspace root. |
 | `my_work` | `rethunk-github_my_work` | read | Cross-repo personal queue: authored PRs, review requests, assigned issues. `blockedOnMe` lens for action items. |
 | `pr_preflight` | `rethunk-github_pr_preflight` | read | Pre-merge safety check: mergeability, reviews, CI, behind-base count, commit granularity, and computed `safe` verdict. |
-| `pr_comment_batch` | `rethunk-github_pr_comment_batch` | write | Submit a single PR review with inline comments in one API call. |
+| `pr_comment_batch` | `rethunk-github_pr_comment_batch` | write | Submit a single PR review with inline comments in one API call. Supports left/right diff sides, multi-line ranges, and whole-file comments. |
 | `pr_create` | `rethunk-github_pr_create` | write | Create a pull request from an existing head branch. |
-| `issue_from_template` | `rethunk-github_issue_from_template` | write | Create an issue by rendering a repository issue template. |
-| `release_readiness` | `rethunk-github_release_readiness` | read | What would ship if we release now? Unreleased commits, PR metadata, CI on head, diff stats, and release-asset checksum coverage when applicable. |
+| `issue_from_template` | `rethunk-github_issue_from_template` | write | Create an issue by rendering a repository issue template — mustache text for `.md`, structural field rendering for `.yml`/`.yaml` Issue Forms. |
+| `release_readiness` | `rethunk-github_release_readiness` | read | What would ship if we release now? Unreleased commits, PR metadata, CI on head, diff stats, and release-asset checksum coverage when applicable. Up to 64 repos per call; omit `repos` to use the active MCP workspace root. |
 | `release_create` | `rethunk-github_release_create` | write | Create a GitHub release with optional GitHub-generated notes. |
 | `ci_diagnosis` | `rethunk-github_ci_diagnosis` | read | Why is CI red? Resolves the failed run, extracts failed job logs, shows trigger commit. |
 | `org_pulse` | `rethunk-github_org_pulse` | read | Org-wide dashboard: failing CI, stale PRs, unreviewed PRs across recently active repos. |
 | `pin_drift` | `rethunk-github_pin_drift` | read | Audit upstream dependency pins in a local repo. Defaults to the active MCP workspace root; accepts glob patterns for `pinFiles`. |
 | `ecosystem_activity` | `rethunk-github_ecosystem_activity` | read | Chronological commit feed across multiple repos since a given timestamp or relative duration. |
 | `module_pin_hint` | `rethunk-github_module_pin_hint` | read | Return the Go pseudo-version string (`v0.0.0-YYYYMMDDHHMMSS-sha12`) for any repo ref. |
-| `changelog_draft` | `rethunk-github_changelog_draft` | read | Draft a `CHANGELOG.md` section for unreleased commits, grouped by PR metadata. |
+| `changelog_draft` | `rethunk-github_changelog_draft` | read | Draft a `CHANGELOG.md` section for unreleased commits, grouped by PR metadata. Up to 64 repos per call; omit `repos` to use the active MCP workspace root. |
 | `workflow_dispatch` | `rethunk-github_workflow_dispatch` | write | Trigger a GitHub Actions `workflow_dispatch` event. |
 | `gh_auth_status` | `rethunk-github_gh_auth_status` | read | Check whether the server currently has usable GitHub credentials. |
-| `actions_runs_filter` | `rethunk-github_actions_runs_filter` | read | List and filter GitHub Actions workflow runs. |
+| `actions_runs_filter` | `rethunk-github_actions_runs_filter` | read | List and filter GitHub Actions workflow runs, including a `since` time window applied server-side. |
 | `labels_sync` | `rethunk-github_labels_sync` | write | Converge a repository's labels to a declared set. |
 | `check_run_create` | `rethunk-github_check_run_create` | write | Publish a synthetic GitHub check run against a commit SHA. |
 | `security_alerts` | `rethunk-github_security_alerts` | read | Roll up Dependabot and Code Scanning alerts by severity. Requires `security_events` scope (or `repo`). |
@@ -217,36 +217,41 @@ The `safe` boolean is computed from: PR must be open, not a draft, no conflicts,
 
 | Name | Type | Required | Default | Description |
 | ------ | ------ | ---------- | --------- | ------------- |
-| `owner` | `string` | yes | — | GitHub owner/org. |
-| `repo` | `string` | yes | — | Repository name. |
-| `base` | `string` | no | latest semver tag | Base ref to compare from (e.g. `v1.2.0`). Omit to auto-pick the latest semver tag. |
-| `head` | `string` | no | default branch | Head ref to compare to. |
-| `maxCommits` | `int` | no | `50` | 1–200 commits. |
+| `repos` | `(RepoRef \| LocalPath)[]` | no | active workspace root | 1–64 repos. Each is `{ owner, repo }` or `{ localPath }`. |
+| `base` | `string` | no | latest semver tag | Base ref to compare from (e.g. `v1.2.0`). Resolved independently per repo; omit to auto-pick each repo's latest semver tag. |
+| `head` | `string` | no | default branch | Head ref to compare to. Resolved independently per repo. |
+| `maxCommits` | `int` | no | `50` | 1–200 commits. Applies to every repo in the batch. |
 | `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
 **JSON output:**
 
 ```jsonc
 {
-  "base": "v1.2.0",
-  "head": "main",
-  "aheadBy": 15,
-  "truncatedCount": 0,        // commits not shown when the list is capped (omitted when 0)
-  "headCi": { "status": "success", "failedChecks": [] },
-  "commits": [{
-    "sha7": "abc1234",
-    "message": "Fix auth bug",
-    "author": "alice",
-    "date": "2025-04-10T12:00:00Z",
-    "pr": { "number": 42, "title": "Fix auth bug", "labels": ["bug"] }
-  }],
-  "stats": { "additions": 1234, "deletions": 567, "changedFiles": 23 },
-  "artifactIntegrity": {
-    "verdict": "ok",
-    "details": "All assets covered by checksum file",
-    "missingFromChecksum": [],
-    "checksumAsset": "SHA256SUMS"
-  }
+  "repos": [{
+    "owner": "org",
+    "repo": "name",
+    "base": "v1.2.0",
+    "head": "main",
+    "aheadBy": 15,
+    "truncatedCount": 0,        // commits not shown when the list is capped (omitted when 0)
+    "headCi": { "status": "success", "failedChecks": [] },
+    "commits": [{
+      "sha7": "abc1234",
+      "message": "Fix auth bug",
+      "author": "alice",
+      "date": "2025-04-10T12:00:00Z",
+      "pr": { "number": 42, "title": "Fix auth bug", "labels": ["bug"] }
+    }],
+    "stats": { "additions": 1234, "deletions": 567, "changedFiles": 23 },
+    "artifactIntegrity": {
+      "verdict": "ok",
+      "details": "All assets covered by checksum file",
+      "missingFromChecksum": [],
+      "checksumAsset": "SHA256SUMS"
+    }
+    // "error": { "code": "NOT_FOUND", "message": "...", "retryable": false }
+    //   — on per-repo failure (does not fail the batch)
+  }]
 }
 ```
 
@@ -472,30 +477,35 @@ The pseudo-version is formatted as `v0.0.0-YYYYMMDDHHMMSS-<first12SHAchars>` usi
 
 | Name | Type | Required | Default | Description |
 | ------ | ------ | ---------- | --------- | ------------- |
-| `owner` | `string` | yes | — | GitHub owner/org. |
-| `repo` | `string` | yes | — | Repository name. |
-| `base` | `string` | no | latest semver tag | Base ref (tag/branch). Omit to auto-pick the latest semver tag. |
-| `head` | `string` | no | default branch | Head ref to compare to. |
-| `version` | `string` | no | `"Unreleased"` | Version string for the section header (e.g. `"v1.3.0"`). |
-| `maxCommits` | `int` | no | `50` | 1–200 commits. |
+| `repos` | `(RepoRef \| LocalPath)[]` | no | active workspace root | 1–64 repos. Each is `{ owner, repo }` or `{ localPath }`. |
+| `base` | `string` | no | latest semver tag | Base ref (tag/branch). Resolved independently per repo; omit to auto-pick each repo's latest semver tag. |
+| `head` | `string` | no | default branch | Head ref to compare to. Resolved independently per repo. |
+| `version` | `string` | no | `"Unreleased"` | Version string for the section header (e.g. `"v1.3.0"`). Applies to every repo in the batch. |
+| `maxCommits` | `int` | no | `50` | 1–200 commits. Applies to every repo in the batch. |
 | `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
 **JSON output:**
 
 ```jsonc
 {
-  "version": "v1.3.0",
-  "date": "2026-04-21",
-  "base": "v1.2.0",
-  "head": "main",
-  "entries": [{
-    "sha7": "abc1234",
-    "message": "feat: add blockedOnMe lens to my_work",
-    "author": "alice",
-    "date": "2026-04-20T10:00:00Z",
-    "pr": { "number": 42, "title": "feat: add blockedOnMe lens", "labels": ["enhancement"] }
-  }],
-  "truncatedCount": 3   // omitted when 0; commits beyond maxCommits that were not returned
+  "repos": [{
+    "owner": "org",
+    "repo": "name",
+    "version": "v1.3.0",
+    "date": "2026-04-21",
+    "base": "v1.2.0",
+    "head": "main",
+    "entries": [{
+      "sha7": "abc1234",
+      "message": "feat: add blockedOnMe lens to my_work",
+      "author": "alice",
+      "date": "2026-04-20T10:00:00Z",
+      "pr": { "number": 42, "title": "feat: add blockedOnMe lens", "labels": ["enhancement"] }
+    }],
+    "truncatedCount": 3   // omitted when 0; commits beyond maxCommits that were not returned
+    // "error": { "code": "NOT_FOUND", "message": "...", "retryable": false }
+    //   — on per-repo failure (does not fail the batch)
+  }]
 }
 ```
 
@@ -514,8 +524,22 @@ Commits are compared as `base...head`. PR metadata (title, labels) is resolved v
 | `pullNumber` | `int` | yes | — | Pull request number. |
 | `body` | `string` | no | — | Overall review body text. |
 | `event` | `"COMMENT" \| "APPROVE" \| "REQUEST_CHANGES"` | no | `"COMMENT"` | Review event type. |
-| `comments` | `{ path, line, body }[]` | no | — | Inline comments relative to repository root. |
+| `comments` | `InlineComment[]` | no | — | Inline comments relative to repository root. |
 | `dryRun` | `boolean` | no | `false` | Return the planned review without mutating. |
+
+Each `InlineComment`:
+
+| Name | Type | Required | Default | Description |
+| ------ | ------ | ---------- | --------- | ------------- |
+| `path` | `string` | yes | — | File path relative to repository root. |
+| `body` | `string` | yes | — | Inline comment text. |
+| `line` | `int` | conditional | — | Line number, or the **last** line of the range when `startLine` is set. Required unless `subjectType` is `"file"`. |
+| `side` | `"LEFT" \| "RIGHT"` | no | GitHub's default (`RIGHT`) | Diff side for `line`. `RIGHT` is the head/after state; `LEFT` is the base/before state. |
+| `startLine` | `int` | no | — | **First** line of a multi-line range. Must be less than `line`. |
+| `startSide` | `"LEFT" \| "RIGHT"` | no | — | Diff side for `startLine`. Requires `startLine`. |
+| `subjectType` | `"line" \| "file"` | no | GitHub's default (`line`) | Comment on a line or on the whole file. |
+
+Omitted fields are not sent, so GitHub's own defaults apply. Camel-case names map to the API's `start_line` / `start_side` / `subject_type`. Invalid combinations are rejected by schema validation: `subjectType: "file"` with any of `line`/`side`/`startLine`/`startSide`; `startLine` without `line`; `startLine >= line`; `startSide` without `startLine`.
 
 `commentsRequested` reports the number of inline comments submitted in the request; GitHub's review-creation response does not echo the created comments, so this is the requested count, not a server-confirmed one.
 
@@ -572,11 +596,19 @@ When `dryRun: true`:
 | `owner` | `string` | yes | — | GitHub owner/org. |
 | `repo` | `string` | yes | — | Repository name. |
 | `template` | `string` | yes | — | Template filename or partial match under `.github/ISSUE_TEMPLATE`. |
-| `variables` | `Record<string, unknown>` | yes | — | Values used to replace `{{ key }}` (mustache) patterns. The legacy `$key` form is no longer substituted. |
-| `title` | `string` | yes | — | Issue title. |
-| `assignees` | `string[]` | no | — | Assignee usernames. |
-| `labels` | `string[]` | no | — | Labels to apply. |
-| `dryRun` | `boolean` | no | `false` | Fetch and render the template (with variable substitution), then return the planned issue without mutating. |
+| `variables` | `Record<string, unknown>` | yes | — | For `.md` templates: values replacing `{{ key }}` (mustache) patterns; the legacy `$key` form is no longer substituted. For `.yml`/`.yaml` Issue Forms: values keyed by field `id` (or slugified `label`). |
+| `title` | `string` | conditional | — | Issue title. Required unless the matched template is an Issue Form declaring a top-level `title:`. An explicit `title` always wins over the form's. |
+| `assignees` | `string[]` | no | — | Assignee usernames. Unioned with any the form declares. |
+| `labels` | `string[]` | no | — | Labels to apply. Unioned with any the form declares. |
+| `dryRun` | `boolean` | no | `false` | Fetch and render the template, then return the planned issue without mutating. |
+
+**Issue Forms (`.yml` / `.yaml`)**
+
+The template's file extension selects the rendering path — `.yml`/`.yaml` are parsed as [GitHub Issue Forms](https://docs.github.com/issues/using-labels-and-milestones-to-track-work/about-issue-forms) and rendered structurally; anything else takes the mustache text path unchanged. Mustache substitution is never applied to a form.
+
+Each element of the form's `body[]` renders in order: `markdown` elements emit their `attributes.value` verbatim (static prose, not addressable by a variable), and `input` / `textarea` / `dropdown` / `checkboxes` emit `### <label>` followed by the resolved value. Value resolution is caller variable → the field's declared `attributes.value` default → `_No response_`. `checkboxes` render as `- [x]` / `- [ ]` against the caller's selection (accepted as an array or a comma-separated string).
+
+These are `VALIDATION` errors rather than a malformed filed issue: a field with `validations.required: true` and no resolved value, a required checkbox left unchecked, a `dropdown` value outside its declared `options`, an unknown key in `variables`, and unparseable YAML.
 
 **JSON output:**
 
@@ -667,6 +699,7 @@ On missing or invalid auth, the tool returns `{ "authenticated": false }` instea
 | `status` | `"queued" \| "in_progress" \| "completed"` | no | — | Filter by run status. |
 | `conclusion` | `"success" \| "failure" \| "cancelled"` | no | — | Filter by run conclusion. |
 | `branch` | `string` | no | — | Filter by branch name. |
+| `since` | `string` | no | — | Only runs created at or after this time. ISO-8601 date/datetime, or a relative window like `"7d"` / `"24h"`. |
 | `limit` | `int` | no | `20` | Maximum number of runs to return (1–200, default 20). |
 | `format` | `"markdown" \| "json"` | no | `"json"` | Output format. |
 
@@ -687,6 +720,8 @@ On missing or invalid auth, the tool returns `{ "authenticated": false }` instea
 ```
 
 No per-item `url` — reconstruct as `https://github.com/{owner}/{repo}/actions/runs/{id}`. `format=markdown` renders this link inline.
+
+`since` is applied server-side as the GitHub `created` range filter, so it narrows the result set before `limit` is applied rather than trimming an already-capped page. A malformed value returns a `VALIDATION` error.
 
 ---
 

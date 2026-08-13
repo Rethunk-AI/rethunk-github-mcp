@@ -17,15 +17,15 @@
 | **`repo_status`** | Multi-repo dashboard: branch HEAD, CI, PRs, issues, latest commit — up to 64 repos in one call |
 | **`my_work`** | Cross-repo personal queue: your open PRs, review requests, assigned issues; `blockedOnMe` lens for action items |
 | **`pr_preflight`** | Pre-merge safety check: mergeable, reviews, CI, behind-base, commit granularity, computed `safe` verdict; batch-capable |
-| **`release_readiness`** | What would ship now: unreleased commits, associated PRs, CI on head, diff stats, and release-asset checksum coverage |
+| **`release_readiness`** | What would ship now, across up to 64 repos: unreleased commits, associated PRs, CI on head, diff stats, and release-asset checksum coverage |
 | **`ci_diagnosis`** | Why is CI red: failed run logs (tail-truncated), trigger commit, run URL |
 | **`org_pulse`** | Org-wide dashboard: failing CI, stale PRs, unreviewed PRs across recently active repos |
 | **`pin_drift`** | Audit upstream pins in a local repo: how far are go.mod, submodule, versions.env, and package.json pins behind upstream? |
 | **`ecosystem_activity`** | Merged commit feed across multiple repos since a given timestamp or `"48h"` / `"7d"` duration |
 | **`module_pin_hint`** | Return the correct Go pseudo-version string (`v0.0.0-YYYYMMDDHHMMSS-sha12`) for any repo ref |
-| **`changelog_draft`** | Draft a `CHANGELOG.md` section for unreleased commits, grouped by PR metadata |
+| **`changelog_draft`** | Draft a `CHANGELOG.md` section for unreleased commits, grouped by PR metadata, across up to 64 repos |
 | **`gh_auth_status`** | Check whether the server currently has usable GitHub credentials |
-| **`actions_runs_filter`** | List and filter GitHub Actions runs by workflow, status, conclusion, and branch |
+| **`actions_runs_filter`** | List and filter GitHub Actions runs by workflow, status, conclusion, branch, and time window |
 | **`security_alerts`** | Roll up Dependabot and Code Scanning alerts by severity across a repository |
 | **`branch_protection_status`** | Check branch protection rules for a branch (defaults to the repo default branch) |
 | **`deployment_status`** | Check deployment status and latest state per environment |
@@ -35,9 +35,9 @@
 
 | Tool | What it does |
 | ------ | ------------- |
-| **`pr_comment_batch`** | Submit a single PR review with inline comments in one call |
+| **`pr_comment_batch`** | Submit a single PR review with inline comments in one call, including multi-line ranges and left-side comments |
 | **`pr_create`** | Open a pull request from an existing head branch |
-| **`issue_from_template`** | Create an issue by rendering a repository issue template |
+| **`issue_from_template`** | Create an issue by rendering a repository issue template, including YAML Issue Forms |
 | **`release_create`** | Create a GitHub release, optionally asking GitHub to generate notes |
 | **`workflow_dispatch`** | Trigger a GitHub Actions workflow_dispatch event |
 | **`labels_sync`** | Converge a repository's labels to a declared set |
