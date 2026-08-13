@@ -1,4 +1,5 @@
 import type { FastMCP } from "fastmcp";
+import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import { gateAuth } from "./github-auth.js";
 import { classifyError, getOctokit } from "./github-client.js";
@@ -154,6 +155,199 @@ export function substituteVariables(
 }
 
 // ---------------------------------------------------------------------------
+// GitHub Issue Forms (YAML) rendering
+// ---------------------------------------------------------------------------
+
+/** A single declared checkbox option; `required` means that box must be checked. */
+export interface IssueFormCheckboxOption {
+  label: string;
+  required?: boolean;
+}
+
+export interface IssueFormAttributes {
+  label?: string;
+  value?: string;
+  placeholder?: string;
+  /** `dropdown` options are plain labels; `checkboxes` options carry a per-box `required` flag. */
+  options?: string[] | IssueFormCheckboxOption[];
+}
+
+export interface IssueFormElement {
+  type: "markdown" | "input" | "textarea" | "dropdown" | "checkboxes";
+  id?: string;
+  attributes?: IssueFormAttributes;
+  validations?: { required?: boolean };
+}
+
+export interface IssueForm {
+  name?: string;
+  description?: string;
+  title?: string;
+  labels?: string[];
+  assignees?: string[];
+  body: IssueFormElement[];
+}
+
+export interface RenderedIssueForm {
+  body: string;
+  title?: string;
+  labels: string[];
+  assignees: string[];
+}
+
+/** Raised for any Issue Form problem that should surface as a `VALIDATION` tool error. */
+export class IssueFormValidationError extends Error {
+  readonly suggestedFix?: string;
+
+  constructor(message: string, suggestedFix?: string) {
+    super(message);
+    this.name = "IssueFormValidationError";
+    this.suggestedFix = suggestedFix;
+  }
+}
+
+/** Lowercase, non-alphanumerics collapsed to `-`, matching GitHub's own field-id slugging. */
+export function slugifyLabel(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/** Validate the minimal shape needed to render — an Issue Form is a mapping with a `body` array. */
+export function parseIssueForm(raw: unknown): IssueForm {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new IssueFormValidationError("Issue form YAML must be a top-level mapping.");
+  }
+  const obj = raw as Record<string, unknown>;
+  if (!Array.isArray(obj.body)) {
+    throw new IssueFormValidationError("Issue form YAML is missing a top-level `body` array.");
+  }
+  return {
+    ...(typeof obj.name === "string" ? { name: obj.name } : {}),
+    ...(typeof obj.description === "string" ? { description: obj.description } : {}),
+    ...(typeof obj.title === "string" ? { title: obj.title } : {}),
+    ...(Array.isArray(obj.labels) ? { labels: obj.labels.map(String) } : {}),
+    ...(Array.isArray(obj.assignees) ? { assignees: obj.assignees.map(String) } : {}),
+    body: obj.body as IssueFormElement[],
+  };
+}
+
+function fieldKey(element: IssueFormElement): string {
+  return element.id ?? slugifyLabel(element.attributes?.label ?? "");
+}
+
+function normalizeCheckboxSelection(value: unknown): Set<string> {
+  if (Array.isArray(value)) return new Set(value.map(String));
+  if (typeof value === "string") {
+    return new Set(
+      value
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0),
+    );
+  }
+  if (value === undefined || value === null) return new Set();
+  return new Set([String(value)]);
+}
+
+/**
+ * Render a GitHub Issue Form definition into the markdown body GitHub itself
+ * would produce, resolving each declared field from `variables`.
+ * Throws `IssueFormValidationError` for unknown variable keys, unmet
+ * `validations.required`, or a dropdown value outside its declared options.
+ */
+export function renderIssueForm(
+  form: IssueForm,
+  variables: Record<string, unknown>,
+): RenderedIssueForm {
+  const knownKeys = new Set<string>();
+  for (const element of form.body) {
+    if (element.type !== "markdown") knownKeys.add(fieldKey(element));
+  }
+
+  const unknownKeys = Object.keys(variables).filter((k) => !knownKeys.has(k));
+  if (unknownKeys.length > 0) {
+    throw new IssueFormValidationError(
+      `Unknown variable key(s): ${unknownKeys.join(", ")}. Valid field ids: ${
+        [...knownKeys].join(", ") || "(none)"
+      }.`,
+      `Remove or correct: ${unknownKeys.join(", ")}.`,
+    );
+  }
+
+  const missingRequired: string[] = [];
+  const invalidDropdown: string[] = [];
+  const blocks: string[] = [];
+
+  for (const element of form.body) {
+    if (element.type === "markdown") {
+      blocks.push(String(element.attributes?.value ?? ""));
+      continue;
+    }
+
+    const key = fieldKey(element);
+    const label = element.attributes?.label ?? key;
+    const provided = variables[key];
+
+    if (element.type === "checkboxes") {
+      const options = (element.attributes?.options ?? []) as IssueFormCheckboxOption[];
+      const selected = normalizeCheckboxSelection(provided);
+      const lines = options.map((option) => {
+        const checked = selected.has(option.label);
+        if (option.required && !checked) {
+          missingRequired.push(`${key} ("${option.label}")`);
+        }
+        return `- [${checked ? "x" : " "}] ${option.label}`;
+      });
+      blocks.push(`### ${label}\n\n${lines.join("\n")}`);
+      continue;
+    }
+
+    let value: string | undefined;
+    if (provided !== undefined) {
+      value = String(provided);
+    } else if (element.attributes?.value !== undefined) {
+      value = String(element.attributes.value);
+    }
+
+    if (element.type === "dropdown" && value !== undefined) {
+      const options = (element.attributes?.options ?? []) as string[];
+      if (!options.includes(value)) {
+        invalidDropdown.push(`${key}="${value}" (expected one of: ${options.join(", ")})`);
+      }
+    }
+
+    if (value === undefined) {
+      if (element.validations?.required) missingRequired.push(key);
+      value = "_No response_";
+    }
+
+    blocks.push(`### ${label}\n\n${value}`);
+  }
+
+  if (missingRequired.length > 0) {
+    throw new IssueFormValidationError(
+      `Missing required field(s): ${missingRequired.join(", ")}`,
+      `Provide values for: ${missingRequired.join(", ")}.`,
+    );
+  }
+  if (invalidDropdown.length > 0) {
+    throw new IssueFormValidationError(
+      `Invalid dropdown value(s): ${invalidDropdown.join("; ")}`,
+      "Use one of the declared dropdown options.",
+    );
+  }
+
+  return {
+    body: blocks.join("\n\n"),
+    ...(form.title !== undefined ? { title: form.title } : {}),
+    labels: form.labels ?? [],
+    assignees: form.assignees ?? [],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Tool registration
 // ---------------------------------------------------------------------------
 
@@ -161,20 +355,25 @@ export function registerIssueFromTemplateTool(server: FastMCP): void {
   server.addTool({
     name: "issue_from_template",
     description:
-      "Create a GitHub issue from a repository issue template. Searches for the template by filename (exact or partial match), substitutes variables, and creates the issue.",
+      "Create a GitHub issue from a repository issue template. Searches for the template by filename (exact or partial match), substitutes variables, and creates the issue. `.yml`/`.yaml` templates are rendered as GitHub Issue Forms; other extensions use mustache `{{ var }}` substitution.",
     annotations: { readOnlyHint: false },
     parameters: RepoRefSchema.extend({
       template: z
         .string()
         .describe(
-          'Template filename (e.g. "bug_report.md") or partial match. Matched case-insensitively.',
+          'Template filename (e.g. "bug_report.md" or "bug_report.yml") or partial match. Matched case-insensitively.',
         ),
       variables: z
         .record(z.string(), z.any())
         .describe(
-          "Key-value pairs for template variable substitution. Replaces {{ key }} patterns only.",
+          "Key-value pairs used for template rendering. For `.md` templates, replaces {{ key }} patterns only. For Issue Form `.yml`/`.yaml` templates, keys are field `id`s (or slugified `label`s).",
         ),
-      title: z.string().describe("Issue title."),
+      title: z
+        .string()
+        .optional()
+        .describe(
+          "Issue title. Required unless the matched template is an Issue Form declaring a top-level `title:`.",
+        ),
       assignees: z
         .array(z.string())
         .optional()
@@ -235,17 +434,74 @@ export function registerIssueFromTemplateTool(server: FastMCP): void {
           matchedTemplate.path,
         );
 
-        // Substitute variables in the template content
-        // biome-ignore lint/suspicious/noExplicitAny: Runtime variable conversion from schema
-        const body = substituteVariables(templateContent, variables as any);
+        const isIssueForm = /\.ya?ml$/i.test(matchedTemplate.name);
+
+        let body: string;
+        let effectiveTitle = title;
+        let effectiveLabels = labels ?? [];
+        let effectiveAssignees = assignees ?? [];
+
+        if (isIssueForm) {
+          let parsedYaml: unknown;
+          try {
+            parsedYaml = parseYaml(templateContent);
+          } catch (yamlErr) {
+            return errorRespond(
+              mkError(
+                "VALIDATION",
+                `Malformed YAML in issue form template "${matchedTemplate.name}": ${
+                  yamlErr instanceof Error ? yamlErr.message : String(yamlErr)
+                }`,
+                { suggestedFix: "Fix the YAML syntax in the template file." },
+              ),
+            );
+          }
+
+          try {
+            const form = parseIssueForm(parsedYaml);
+            const rendered = renderIssueForm(form, variables as Record<string, unknown>);
+            body = rendered.body;
+            effectiveTitle = title ?? rendered.title;
+            effectiveLabels = [...new Set([...(labels ?? []), ...rendered.labels])];
+            effectiveAssignees = [...new Set([...(assignees ?? []), ...rendered.assignees])];
+          } catch (formErr) {
+            if (formErr instanceof IssueFormValidationError) {
+              return errorRespond(
+                mkError("VALIDATION", formErr.message, {
+                  ...(formErr.suggestedFix !== undefined
+                    ? { suggestedFix: formErr.suggestedFix }
+                    : {}),
+                }),
+              );
+            }
+            return errorRespond(
+              mkError("VALIDATION", formErr instanceof Error ? formErr.message : String(formErr)),
+            );
+          }
+        } else {
+          body = substituteVariables(
+            templateContent,
+            variables as Record<string, string | number | boolean>,
+          );
+        }
+
+        if (!effectiveTitle) {
+          return errorRespond(
+            mkError("VALIDATION", "Issue title is required.", {
+              suggestedFix: isIssueForm
+                ? "Pass `title`, or declare a top-level `title:` in the issue form template."
+                : "Pass `title`.",
+            }),
+          );
+        }
 
         if (dryRun) {
           const plan: IssueFromTemplateDryRunResult["plan"] = {
             owner,
             repo,
-            title,
+            title: effectiveTitle,
             bodyPreview: truncateText(body, 200),
-            labels: labels ?? [],
+            labels: effectiveLabels,
           };
           return jsonRespond({ dryRun: true, plan });
         }
@@ -254,10 +510,10 @@ export function registerIssueFromTemplateTool(server: FastMCP): void {
         const requestParams: Parameters<typeof octokit.issues.create>[0] = {
           owner,
           repo,
-          title,
+          title: effectiveTitle,
           body,
-          ...(assignees && assignees.length > 0 ? { assignees } : {}),
-          ...(labels && labels.length > 0 ? { labels } : {}),
+          ...(effectiveAssignees.length > 0 ? { assignees: effectiveAssignees } : {}),
+          ...(effectiveLabels.length > 0 ? { labels: effectiveLabels } : {}),
         };
 
         const issue = await octokit.issues.create(requestParams);

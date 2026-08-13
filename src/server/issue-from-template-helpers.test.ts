@@ -1,10 +1,16 @@
 import { describe, expect, test } from "bun:test";
+import { parse as parseYaml } from "yaml";
 
 import {
   fetchIssueTemplateDirectory,
   fetchIssueTemplateFileContent,
   findTemplate,
+  type IssueForm,
+  IssueFormValidationError,
   type IssueTemplateOctokit,
+  parseIssueForm,
+  renderIssueForm,
+  slugifyLabel,
   substituteVariables,
 } from "./issue-from-template-tool.js";
 
@@ -121,5 +127,165 @@ describe("fetchIssueTemplateFileContent", () => {
     await expect(fetchIssueTemplateFileContent(octokit, "o", "r", "x")).rejects.toThrow(
       "Template at x is not a file",
     );
+  });
+});
+
+const ISSUE_FORM_YAML = `
+name: Bug Report
+title: "[Bug]: default title"
+labels:
+  - bug
+  - triage
+assignees:
+  - octocat
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for filing a bug!
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to Reproduce
+      value: No steps provided by default.
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Low
+        - Medium
+        - High
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing issues
+          required: true
+        - label: I can reproduce reliably
+`;
+
+function loadIssueForm(): IssueForm {
+  return parseIssueForm(parseYaml(ISSUE_FORM_YAML));
+}
+
+describe("slugifyLabel", () => {
+  test("lowercases and collapses non-alphanumerics to a single dash", () => {
+    expect(slugifyLabel("Steps to Reproduce!")).toBe("steps-to-reproduce");
+  });
+});
+
+describe("parseIssueForm", () => {
+  test("parses declared title/labels/assignees and the body array", () => {
+    const form = loadIssueForm();
+    expect(form.title).toBe("[Bug]: default title");
+    expect(form.labels).toEqual(["bug", "triage"]);
+    expect(form.assignees).toEqual(["octocat"]);
+    expect(form.body).toHaveLength(5);
+  });
+
+  test("throws IssueFormValidationError when the document isn't a mapping", () => {
+    expect(() => parseIssueForm("just a string")).toThrow(IssueFormValidationError);
+  });
+
+  test("throws IssueFormValidationError when `body` is missing", () => {
+    expect(() => parseIssueForm({ title: "x" })).toThrow(IssueFormValidationError);
+  });
+});
+
+describe("renderIssueForm", () => {
+  test("renders markdown inline and ### <label> sections in body order", () => {
+    const rendered = renderIssueForm(loadIssueForm(), {
+      summary: "Crash on launch",
+      severity: "Medium",
+      confirm: ["I searched existing issues", "I can reproduce reliably"],
+    });
+
+    expect(rendered.body).toBe(
+      [
+        "Thanks for filing a bug!",
+        "### Summary\n\nCrash on launch",
+        "### Steps to Reproduce\n\nNo steps provided by default.",
+        "### Severity\n\nMedium",
+        "### Confirmations\n\n- [x] I searched existing issues\n- [x] I can reproduce reliably",
+      ].join("\n\n"),
+    );
+    expect(rendered.title).toBe("[Bug]: default title");
+    expect(rendered.labels).toEqual(["bug", "triage"]);
+    expect(rendered.assignees).toEqual(["octocat"]);
+  });
+
+  test("uses the declared attributes.value default when the caller omits a field", () => {
+    const rendered = renderIssueForm(loadIssueForm(), {
+      summary: "Crash on launch",
+      confirm: "I searched existing issues",
+    });
+    expect(rendered.body).toContain("### Steps to Reproduce\n\nNo steps provided by default.");
+  });
+
+  test("renders _No response_ for an optional field with no value and no default", () => {
+    const rendered = renderIssueForm(loadIssueForm(), {
+      summary: "Crash on launch",
+      confirm: "I searched existing issues",
+    });
+    expect(rendered.body).toContain("### Severity\n\n_No response_");
+  });
+
+  test("accepts a comma-separated string for checkbox selection", () => {
+    const rendered = renderIssueForm(loadIssueForm(), {
+      summary: "Crash on launch",
+      confirm: "I searched existing issues, I can reproduce reliably",
+    });
+    expect(rendered.body).toContain(
+      "- [x] I searched existing issues\n- [x] I can reproduce reliably",
+    );
+  });
+
+  test("renders unchecked boxes for options the caller didn't select", () => {
+    const rendered = renderIssueForm(loadIssueForm(), {
+      summary: "Crash on launch",
+      confirm: "I searched existing issues",
+    });
+    expect(rendered.body).toContain(
+      "- [x] I searched existing issues\n- [ ] I can reproduce reliably",
+    );
+  });
+
+  test("throws IssueFormValidationError naming the field when required and unmet", () => {
+    expect(() =>
+      renderIssueForm(loadIssueForm(), { confirm: "I searched existing issues" }),
+    ).toThrow(/summary/);
+  });
+
+  test("throws IssueFormValidationError naming a missing required checkbox option", () => {
+    expect(() =>
+      renderIssueForm(loadIssueForm(), { summary: "Crash on launch", confirm: [] }),
+    ).toThrow(/I searched existing issues/);
+  });
+
+  test("throws IssueFormValidationError when a dropdown value isn't a declared option", () => {
+    expect(() =>
+      renderIssueForm(loadIssueForm(), {
+        summary: "Crash on launch",
+        severity: "Critical",
+        confirm: "I searched existing issues",
+      }),
+    ).toThrow(/severity/);
+  });
+
+  test("throws IssueFormValidationError naming an unknown variable key", () => {
+    expect(() =>
+      renderIssueForm(loadIssueForm(), {
+        summary: "Crash on launch",
+        confirm: "I searched existing issues",
+        nope: "typo",
+      }),
+    ).toThrow(/nope/);
   });
 });

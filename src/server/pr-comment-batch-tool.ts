@@ -192,7 +192,7 @@ export function registerPrCommentBatchTool(server: FastMCP): void {
         // generated request type yet, though GitHub's REST API accepts it for
         // whole-file comments, so the per-item type is widened locally.
         type ReviewCommentRequest = NonNullable<
-          Parameters<typeof octokit.pulls.createReview>[0]["comments"]
+          NonNullable<Parameters<typeof octokit.pulls.createReview>[0]>["comments"]
         >[number] & { subject_type?: "line" | "file" };
 
         if (comments && comments.length > 0) {
