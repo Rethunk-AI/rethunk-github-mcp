@@ -34,7 +34,7 @@ jobs:
       run: bun run test:coverage
 
     - name: Assert Node.js version
-      run: node -e "const v=+process.version.slice(1).split('.')[0]; if(v<22)process.exit(1)"
+      run: node -e "const v=+process.version.slice(1).split('.')[0]; if(v<24)process.exit(1)"
 
   prerelease-pack:
     needs: check
@@ -57,7 +57,7 @@ jobs:
       run: bun run build
 
     - name: Assert Node.js version
-      run: node -e "const v=+process.version.slice(1).split('.')[0]; if(v<22)process.exit(1)"
+      run: node -e "const v=+process.version.slice(1).split('.')[0]; if(v<24)process.exit(1)"
 
     - name: Pack npm tarball (prerelease snapshot)
       id: pack
