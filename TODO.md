@@ -12,12 +12,6 @@ Feature asks driven by real pain points from agent sessions. This file is future
 
 **Ask:** extend the tool with artifact attachments, changelog-driven notes, and optional verification-block generation.
 
-### `workflow_dispatch` — watch mode and run resolution
-
-**Current state:** `workflow_dispatch` exists and triggers the event successfully, but GitHub's 204 response means callers still need a follow-up query to find and watch the resulting run.
-
-**Ask:** add `watch`, `timeoutSec`, and final-run resolution so one call can dispatch and observe the workflow outcome.
-
 ## Medium value
 
 ### `pr_create` — branch push and body generation helpers
