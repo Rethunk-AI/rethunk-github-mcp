@@ -664,12 +664,28 @@ When both `body` and `generateNotes` are supplied, GitHub-generated notes win an
 | `ref` | `string` | yes | — | Branch or tag to run against. |
 | `inputs` | `Record<string, string>` | no | `{}` | Optional workflow input values. |
 | `dryRun` | `boolean` | no | `false` | When true, return the resolved dispatch parameters without triggering the workflow. |
+| `watch` | `boolean` | no | `false` | When true, poll for the dispatched run and wait for it to complete before returning `runId`/`url`/`status`/`conclusion`. |
+| `timeoutSec` | `number` | no | `60` | Max seconds to wait in watch mode before giving up (5–300). Ignored unless `watch` is true. |
 
-**JSON output:**
+**JSON output (`watch: false`, the default):**
 
 ```jsonc
 { "message": "Workflow 'ci.yml' dispatched successfully on org/repo:main. GitHub returns 204 (no run ID); poll workflow runs to find the dispatched run." }
 ```
+
+**JSON output (`watch: true`):**
+
+```jsonc
+{
+  "message": "Workflow 'ci.yml' dispatched and completed on org/repo:main.",
+  "runId": 123456789,
+  "url": "https://github.com/org/repo/actions/runs/123456789",
+  "status": "completed",
+  "conclusion": "success"
+}
+```
+
+If the run never becomes visible, or never reaches `status: "completed"`, within `timeoutSec`, the response instead carries `timedOut: true` alongside whatever run info (`runId`/`url`/`status`/`conclusion`) was found before the deadline.
 
 ---
 
